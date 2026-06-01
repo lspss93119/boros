@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Boros Historical APR Explorer</title>
+  <link rel="stylesheet" href="./styles.css?v=20260601-labels1">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div>
+        <h1 id="pageTitle">Boros Historical APR Explorer</h1>
+        <p id="pageSubtitle">Explore Boros implied APR against forward realized funding: what the market priced versus what funding actually delivered.</p>
+      </div>
+      <div class="top-actions">
+        <button id="languageToggle" type="button">中文</button>
+      </div>
+    </header>
+
+    <section class="filters" aria-label="Analysis filters">
+      <label>
+        <span id="exchangeLabel">Exchange</span>
+        <select id="exchangeSelect"></select>
+      </label>
+      <label>
+        <span id="assetLabel">Asset</span>
+        <select id="assetSelect"></select>
+      </label>
+      <label>
+        <span id="maturityLabel">Expiration</span>
+        <select id="maturitySelect"></select>
+      </label>
+      <div class="segmented" role="group" aria-label="Basis direction">
+        <button class="active" data-lens="all" type="button" id="lensAll">All</button>
+        <button data-lens="paid" type="button" id="lensPaid">Paid More</button>
+        <button data-lens="received" type="button" id="lensReceived">Received More</button>
+      </div>
+    </section>
+
+    <main>
+      <section class="kpis" id="kpis"></section>
+
+      <section class="layout">
+        <section class="workspace">
+          <section class="panel map-panel">
+            <div class="panel-title">
+              <div>
+                <h2 id="mapTitle">Market Map</h2>
+                <p id="mapSubtitle">Average implied APR versus forward realized APR for the filtered markets.</p>
+              </div>
+            </div>
+            <canvas id="scatterChart" width="1180" height="420"></canvas>
+            <p class="chart-note" id="forwardRealizedNote">Forward realized APR is the actual exchange funding APR averaged from each Boros observation date through that market's expiry.</p>
+          </section>
+
+          <section class="panel market-panel">
+            <div class="market-heading">
+              <div>
+                <p class="eyebrow" id="marketMeta">Market</p>
+                <h2 id="marketTitle">Loading...</h2>
+              </div>
+            </div>
+            <div class="chart-tabs" role="tablist" aria-label="Market chart">
+              <button class="active" data-chart="apr" type="button" id="tabApr">Implied vs forward realized</button>
+              <button data-chart="settlement" type="button" id="tabSettlement">Implied vs actual settlement</button>
+              <button data-chart="ohlcv" type="button" id="tabOhlcv">OHLCV</button>
+            </div>
+            <div class="chart-shell">
+              <canvas id="mainChart" width="1180" height="520"></canvas>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script src="./app.js?v=20260601-labels1"></script>
+</body>
+</html>

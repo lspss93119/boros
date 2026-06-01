@@ -1,0 +1,55 @@
+# macOS / editor noise
+.DS_Store
+._*
+*.swp
+*.swo
+*~
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Secrets and local machine config
+.env
+.env.*
+!.env.example
+
+# Logs and temporary files
+*.log
+*.tmp
+tmp/
+temp/
+
+# Raw downloads from Boros. These can be regenerated with
+# `python3 boros_apr_pipeline.py all --workers 16` and are not needed by
+# GitHub Pages.
+raw_boros/
+files.json
+
+# One-off local analysis/scratch files. Keep the canonical processed CSVs
+# because the GitHub Pages workflow rebuilds `site/data/boros_apr_site_data.json`
+# from `processed/`.
+actual funding.csv
+daily_realized_funding.csv
+data.csv
+data.txt
+final.xlsx
+implied funding.csv
+
+# Generated exploratory dashboard kept out of the Pages deploy path.
+visualizations/
+
+# Keep these tracked for GitHub Pages:
+# - .github/workflows/deploy-pages.yml
+# - README.md
+# - boros_apr_pipeline.py
+# - build_site_data.py
+# - processed/*.csv
+# - site/
