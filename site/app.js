@@ -31,6 +31,12 @@ const el = {
   tabOhlcv: document.getElementById("tabOhlcv"),
   mainChart: document.getElementById("mainChart"),
   scatterChart: document.getElementById("scatterChart"),
+  crossTitle: document.getElementById("crossTitle"),
+  crossSubtitle: document.getElementById("crossSubtitle"),
+  crossAssetLabel: document.getElementById("crossAssetLabel"),
+  crossAsset: document.getElementById("crossAssetSelect"),
+  crossChart: document.getElementById("crossChart"),
+  crossNote: document.getElementById("crossNote"),
 };
 
 const colors = {
@@ -92,6 +98,7 @@ const copy = {
     market: "Market",
     loading: "Loading...",
     expired: "expired",
+    expires: "expires",
     apr: "APR",
     impliedVsForward: "Implied vs forward realized",
     gap: "Gap",
@@ -123,6 +130,10 @@ const copy = {
     nearRealized: "Near realized",
     paidMoreLabel: "Paid more than realized",
     receivedMoreLabel: "Received more than paid",
+    crossTitle: "Cross-Exchange Implied APR",
+    crossSubtitle: "Compare the stitched historical implied APR of one underlying asset across all exchanges. Independent of the filters above.",
+    crossNote: "Each line stitches all of an exchange's markets for this asset into one continuous series, using the market closest to expiry on each date (markets sharing the same expiry are averaged).",
+    underlyingAsset: "Underlying asset",
   },
   zh: {
     pageTitle: "Boros 历史 APR 看板",
@@ -148,6 +159,7 @@ const copy = {
     market: "市场",
     loading: "加载中...",
     expired: "已到期",
+    expires: "到期日",
     apr: "APR",
     impliedVsForward: "隐含 vs 远期实际",
     gap: "Gap",
@@ -179,10 +191,78 @@ const copy = {
     nearRealized: "接近实际",
     paidMoreLabel: "支付高于实际",
     receivedMoreLabel: "实际高于支付",
+    crossTitle: "跨交易所隐含 APR",
+    crossSubtitle: "比较同一标的资产在各交易所拼接后的历史隐含 APR，不受上方筛选影响。",
+    crossNote: "每条线将该交易所此资产的所有市场拼接为一条连续序列：每个日期取距到期最近的市场（相同到期日的市场取平均）。",
+    underlyingAsset: "标的资产",
   },
 };
 
 const t = key => copy[state.lang][key] || copy.en[key] || key;
+
+const exchangeColors = {
+  Binance: colors.gold,
+  Bybit: colors.red,
+  Gate: colors.blue,
+  Hyperliquid: colors.green,
+  KuCoin: "#0b7285",
+  Lighter: colors.violet,
+  OKX: colors.ink,
+};
+const exchangePalette = [colors.green, colors.gold, colors.blue, colors.violet, colors.red, colors.ink, "#0b7285", "#c2255c"];
+const exchangeColor = (name, index) => exchangeColors[name] || exchangePalette[index % exchangePalette.length];
+
+function buildCrossSeries(asset) {
+  const markets = state.data.markets.filter(m => m.summary.asset === asset);
+  const exchanges = [...new Set(markets.map(m => m.summary.exchange))].sort();
+  const dateSet = new Set();
+  const perExchange = new Map();
+  markets.forEach(market => {
+    const { exchange, maturity } = market.summary;
+    if (!perExchange.has(exchange)) perExchange.set(exchange, new Map());
+    const days = perExchange.get(exchange);
+    (market.series || []).forEach(row => {
+      if (row.i == null) return;
+      dateSet.add(row.d);
+      const current = days.get(row.d);
+      if (!current || maturity < current.maturity) {
+        days.set(row.d, { maturity, sum: row.i, count: 1 });
+      } else if (maturity === current.maturity) {
+        current.sum += row.i;
+        current.count += 1;
+      }
+    });
+  });
+  const rows = [...dateSet].sort().map(d => {
+    const row = { d };
+    exchanges.forEach((exchange, index) => {
+      const entry = perExchange.get(exchange).get(d);
+      row[`e${index}`] = entry ? entry.sum / entry.count : null;
+    });
+    return row;
+  });
+  return { rows, exchanges };
+}
+
+function populateCrossAssets() {
+  const assets = [...new Set(state.data.markets.map(m => m.summary.asset))].sort();
+  const selected = el.crossAsset.value || (assets.includes("BTC") ? "BTC" : assets[0]);
+  el.crossAsset.innerHTML = assets.map(x => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("");
+  el.crossAsset.value = assets.includes(selected) ? selected : assets[0];
+}
+
+function renderCross() {
+  const asset = el.crossAsset.value;
+  if (!asset) return;
+  const { rows, exchanges } = buildCrossSeries(asset);
+  const specs = exchanges.map((name, index) => ({
+    key: `e${index}`,
+    label: name,
+    color: exchangeColor(name, index),
+    scale: 100,
+  }));
+  drawLineChart(el.crossChart, rows, specs, { yLabel: t("apr"), suffix: "%", dateKey: "d" });
+}
 
 function gapClass(value) {
   if (value == null || Math.abs(value) < 0.0005) return "neutral";
@@ -230,7 +310,12 @@ function applyLanguage() {
   el.tabApr.textContent = t("impliedVsForward");
   el.tabSettlement.textContent = t("settlement");
   el.tabOhlcv.textContent = t("ohlcv");
+  el.crossTitle.textContent = t("crossTitle");
+  el.crossSubtitle.textContent = t("crossSubtitle");
+  el.crossNote.textContent = t("crossNote");
+  el.crossAssetLabel.textContent = t("underlyingAsset");
   populateFilterOptions();
+  populateCrossAssets();
 }
 
 function setupControls() {
@@ -242,6 +327,9 @@ function setupControls() {
     node.addEventListener("input", () => {
       render();
     });
+  });
+  el.crossAsset.addEventListener("input", () => {
+    renderCross();
   });
   document.querySelectorAll(".segmented button").forEach(button => {
     button.addEventListener("click", () => {
@@ -325,7 +413,7 @@ function renderMarket() {
   const market = byMarket(state.selectedMarket);
   if (!market) return;
   const m = market.summary;
-  el.marketMeta.textContent = `${m.exchange} / ${m.asset} / ${t("expired")} ${m.maturity}`;
+  el.marketMeta.textContent = `${m.exchange} / ${m.asset} / ${t(m.matured ? "expired" : "expires")} ${m.maturity}`;
   el.marketTitle.textContent = m.market;
   drawSelectedChart(market);
 }
@@ -335,6 +423,7 @@ function render() {
   renderKpis();
   drawScatter();
   renderMarket();
+  renderCross();
 }
 
 function drawSelectedChart(market) {

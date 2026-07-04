@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Boros Historical APR Explorer</title>
-  <link rel="stylesheet" href="./styles.css?v=20260601-labels1">
+  <link rel="stylesheet" href="./styles.css?v=20260703-cross1">
 </head>
 <body>
   <div id="app">
@@ -72,8 +72,25 @@
           </section>
         </section>
       </section>
+
+      <section class="panel cross-panel">
+        <div class="panel-title">
+          <div>
+            <h2 id="crossTitle">Cross-Exchange Implied APR</h2>
+            <p id="crossSubtitle">Compare the stitched historical implied APR of one underlying asset across all exchanges. Independent of the filters above.</p>
+          </div>
+          <label class="cross-filter">
+            <span id="crossAssetLabel">Underlying asset</span>
+            <select id="crossAssetSelect"></select>
+          </label>
+        </div>
+        <div class="chart-shell">
+          <canvas id="crossChart" width="1180" height="460"></canvas>
+        </div>
+        <p class="chart-note" id="crossNote">Each line stitches all of an exchange's markets for this asset into one continuous series, using the market closest to expiry on each date (markets sharing the same expiry are averaged).</p>
+      </section>
     </main>
   </div>
-  <script src="./app.js?v=20260601-labels1"></script>
+  <script src="./app.js?v=20260703-cross1"></script>
 </body>
 </html>

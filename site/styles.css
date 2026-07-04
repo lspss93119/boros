@@ -338,6 +338,26 @@ canvas {
   height: 430px;
 }
 
+.cross-panel {
+  margin-top: 14px;
+}
+
+.cross-filter {
+  display: grid;
+  gap: 5px;
+  min-width: 180px;
+}
+
+.cross-filter span {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+#crossChart {
+  height: 430px;
+}
+
 .chart-note {
   margin-top: 8px;
   color: var(--muted);
@@ -523,8 +543,13 @@ canvas.interactive {
   }
 
   canvas,
-  #mainChart {
+  #mainChart,
+  #crossChart {
     height: 300px;
+  }
+
+  .cross-filter {
+    min-width: 0;
   }
 
   .map-panel canvas {

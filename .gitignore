@@ -53,3 +53,6 @@ visualizations/
 # - build_site_data.py
 # - processed/*.csv
 # - site/
+
+# Claude Code local session config (contains machine-specific paths)
+.claude/

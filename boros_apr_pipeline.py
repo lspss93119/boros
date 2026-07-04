@@ -49,6 +49,7 @@ EXCHANGE_NAME = {
     "OKX": "OKX",
     "BYBIT": "Bybit",
     "GATE": "Gate",
+    "KUCOIN": "KuCoin",
     "LIGHTER": "Lighter",
 }
 

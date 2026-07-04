@@ -156,8 +156,6 @@ def build():
     market_payload = []
     all_dates = []
     for market, meta in markets.items():
-        if meta["maturity"] > source_date_max:
-            continue
         rows = sorted(series[market], key=lambda r: r["d"])
         o_rows = sorted(ohlcv_by_market.get(market, []), key=lambda r: r["d"])
         fb = [r["fb"] for r in rows]
