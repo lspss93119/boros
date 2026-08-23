@@ -18,6 +18,7 @@ def test_aliases_are_canonical():
     assert normalize_venue("Hyperliquid") == "HYPERLIQUID"
     assert asset_from_symbol("xyzGOLD") == "XAU"
     assert asset_from_symbol("ETHUSDT") == "ETH"
+    assert asset_from_symbol("BTCUSDC.E") == "BTC"
 
 
 @pytest.mark.parametrize(

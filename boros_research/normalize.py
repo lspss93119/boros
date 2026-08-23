@@ -32,7 +32,7 @@ _MARKET_SLUG_RE = re.compile(
     r"(?P<symbol>.+)-"
     r"(?P<maturity>[0-9]{2}[A-Za-z]{3}[0-9]{4})$"
 )
-_SYMBOL_QUOTES = ("USDT0", "USDC.E", "USDE", "USDT", "USDC", "USD")
+_SYMBOL_QUOTES = ("USDT0", "USDCE", "USDE", "USDT", "USDC", "USD")
 _XYZ_ASSET_ALIASES = {"GOLD": "XAU"}
 
 
