@@ -6,19 +6,14 @@
           "marketId": 155,
           "tokenId": 3,
           "metadata": {
-            "platformName": "Hyperliquid",
             "underlyingSymbol": "HYPE",
-            "assetSymbol": "WRONG_LEGACY_ASSET"
+            "fundingRateSymbol": "HYPEUSDT",
+            "name": "HYPEUSDT"
           },
           "imData": {
             "maturity": 1789747200,
             "name": "Hyperliquid HYPE 18 Sep 2026",
             "symbol": "HYPERLIQUID-HYPEUSDT-18SEP2026"
-          },
-          "state": "Normal",
-          "platform": {
-            "name": "Hyperliquid",
-            "platformId": "Hyperliquid"
           }
         }
       ],
@@ -37,18 +32,14 @@
           "marketId": 156,
           "tokenId": 5,
           "metadata": {
-            "platformName": "Bybit",
-            "assetSymbol": "HYPE"
+            "underlyingSymbol": "HYPE",
+            "fundingRateSymbol": "HYPEUSDT",
+            "name": "HYPEUSDT"
           },
           "imData": {
             "maturity": 1789747200,
             "name": "Bybit HYPE 18 Sep 2026",
             "symbol": "BYBIT-HYPEUSDT-18SEP2026"
-          },
-          "state": "Normal",
-          "platform": {
-            "name": "Bybit",
-            "platformId": "Bybit"
           }
         }
       ],

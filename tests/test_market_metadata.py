@@ -9,6 +9,7 @@ from boros_research.market_metadata import (
     load_market_catalog,
     normalize_assets,
     normalize_market_catalog,
+    venue_from_market_symbol,
 )
 
 
@@ -29,6 +30,19 @@ def test_market_catalog_keeps_collateral_identity_and_prefers_underlying_symbol(
     assert market.asset == "HYPE"
     assert market.maturity.isoformat() == "2026-09-18"
     assert markets[156].asset == "HYPE"
+
+
+def test_market_without_platform_fields_uses_imdata_symbol_for_venue():
+    raw = load_fixture("markets.json")["pages"][0]["results"][0]
+
+    assert "platform" not in raw
+    assert "platformName" not in raw["metadata"]
+    assert normalize_market_catalog({"results": [raw]})[155].venue == "HYPERLIQUID"
+
+
+def test_venue_from_market_symbol_rejects_missing_prefix():
+    with pytest.raises(ValueError, match="no venue prefix"):
+        venue_from_market_symbol("HYPEUSDT")
 
 
 def test_assets_map_token_id_to_canonical_symbol_and_exclude_non_collateral():

@@ -19,8 +19,7 @@
       "symbol": "HYPE",
       "decimals": 18,
       "usdPrice": "80.5",
-      "isCollateral": true,
-      "metadata": {"proSymbol": "HYPE"}
+      "isCollateral": true
     },
     {
       "id": "XAU",
@@ -30,8 +29,7 @@
       "symbol": "XAU",
       "decimals": 6,
       "usdPrice": "4680.6",
-      "isCollateral": false,
-      "metadata": {"proSymbol": "XAU"}
+      "isCollateral": false
     }
   ]
 }

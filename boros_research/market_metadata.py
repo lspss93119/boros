@@ -81,6 +81,19 @@ def _market_pages(value: Any) -> list[JsonObject]:
     raise ValueError("unknown markets response shape")
 
 
+def venue_from_market_symbol(symbol: str) -> str:
+    """Extract a canonical venue from the official ``imData.symbol`` format."""
+    if not isinstance(symbol, str) or not symbol.strip():
+        raise ValueError("market symbol must be a non-empty string")
+
+    venue, separator, market_part = symbol.strip().partition("-")
+    if not separator or not market_part.strip():
+        raise ValueError(f"market symbol has no venue prefix: {symbol!r}")
+    if not venue.isascii() or not venue.isalnum():
+        raise ValueError(f"market symbol has an invalid venue prefix: {symbol!r}")
+    return normalize_venue(venue)
+
+
 def _market_info(raw: JsonObject) -> MarketInfo:
     market_id = raw.get("marketId")
     token_id = raw.get("tokenId")
@@ -104,11 +117,21 @@ def _market_info(raw: JsonObject) -> MarketInfo:
     if not isinstance(underlying, str) or not underlying.strip():
         raise ValueError(f"market {market_id} is missing underlyingSymbol")
 
+    symbol = im_data.get("symbol") or raw.get("symbol")
+    name = im_data.get("name") or raw.get("name")
+    if not isinstance(symbol, str) or not symbol.strip():
+        raise ValueError(f"market {market_id} is missing symbol")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(f"market {market_id} is missing name")
+
     venue = None
-    if platform is not None:
-        venue = platform.get("name") or platform.get("platformId")
-    if not isinstance(venue, str) or not venue.strip():
-        venue = metadata.get("platformName")
+    if isinstance(im_data.get("symbol"), str) and im_data["symbol"].strip():
+        venue = venue_from_market_symbol(symbol)
+    else:
+        if platform is not None:
+            venue = platform.get("name") or platform.get("platformId")
+        if not isinstance(venue, str) or not venue.strip():
+            venue = metadata.get("platformName")
     if not isinstance(venue, str) or not venue.strip():
         raise ValueError(f"market {market_id} is missing platform name")
 
@@ -122,13 +145,6 @@ def _market_info(raw: JsonObject) -> MarketInfo:
     if not math.isfinite(maturity_timestamp) or maturity_timestamp <= 0:
         raise ValueError(f"market {market_id}.imData.maturity must be a positive timestamp")
     maturity = datetime.fromtimestamp(maturity_timestamp, tz=timezone.utc).date()
-
-    symbol = im_data.get("symbol") or raw.get("symbol")
-    name = im_data.get("name") or raw.get("name")
-    if not isinstance(symbol, str) or not symbol.strip():
-        raise ValueError(f"market {market_id} is missing symbol")
-    if not isinstance(name, str) or not name.strip():
-        raise ValueError(f"market {market_id} is missing name")
 
     return MarketInfo(
         market_id=market_id,
@@ -204,7 +220,8 @@ def normalize_assets(value: Any) -> dict[int, CollateralAsset]:
 
         metadata = raw.get("metadata", {})
         metadata = _require_mapping(metadata, "asset.metadata")
-        symbol = metadata.get("proSymbol") or raw.get("symbol")
+        pro_symbol = metadata.get("proSymbol")
+        symbol = pro_symbol if isinstance(pro_symbol, str) and pro_symbol.strip() else raw.get("symbol")
         if not isinstance(symbol, str) or not symbol.strip():
             raise ValueError(f"collateral asset {token_id} is missing symbol")
 
