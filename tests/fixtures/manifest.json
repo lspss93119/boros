@@ -1,0 +1,12 @@
+[
+  {"path":"market-data/155-HYPERLIQUID-HYPEUSDT-25SEP2026/2026-08.ndjson.zip","size":100},
+  {"path":"market-data/999-LIGHTER-HYPEUSDT-25SEP2026/2026-08.ndjson.zip","size":100},
+  {"path":"settlement/155-HYPERLIQUID-HYPEUSDT-25SEP2026/2026-08.ndjson.zip","size":100},
+  {"path":"underlying-apr/Hyperliquid-HYPE.ndjson.zip","size":100},
+  {"path":"funding-rate/Hyperliquid-HYPE.ndjson.zip","size":100},
+  {"path":"ohlcv/5m/155-HYPERLIQUID-HYPEUSDT-25SEP2026/2026-08.ndjson.zip","size":100},
+  {"path":"ohlcv/1d/999-LIGHTER-HYPEUSDT-25SEP2026/2026-08.ndjson.zip","size":100},
+  {"path":"order-book/155-HYPERLIQUID-HYPEUSDT-25SEP2026/raw/2026-08.ndjson.zip","size":100},
+  {"path":"order-book/155-HYPERLIQUID-HYPEUSDT-25SEP2026/combined_0.0001/2026-08.ndjson.zip","size":100},
+  {"path":"order-book/999-LIGHTER-HYPEUSDT-25SEP2026/combined_0.0001/2026-08.ndjson.zip","size":100}
+]
