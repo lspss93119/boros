@@ -32,6 +32,9 @@ temp/
 # GitHub Pages.
 raw_boros/
 files.json
+raw_api/
+raw_indicators/
+data/
 
 # One-off local analysis/scratch files. Keep the canonical processed CSVs
 # because the GitHub Pages workflow rebuilds `site/data/boros_apr_site_data.json`
