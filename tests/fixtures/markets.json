@@ -1,0 +1,65 @@
+{
+  "pages": [
+    {
+      "results": [
+        {
+          "marketId": 155,
+          "tokenId": 3,
+          "metadata": {
+            "platformName": "Hyperliquid",
+            "underlyingSymbol": "HYPE",
+            "assetSymbol": "WRONG_LEGACY_ASSET"
+          },
+          "imData": {
+            "maturity": 1789747200,
+            "name": "Hyperliquid HYPE 18 Sep 2026",
+            "symbol": "HYPERLIQUID-HYPEUSDT-18SEP2026"
+          },
+          "state": "Normal",
+          "platform": {
+            "name": "Hyperliquid",
+            "platformId": "Hyperliquid"
+          }
+        }
+      ],
+      "cursor": {
+        "next": "page-2",
+        "hasMore": true
+      },
+      "syncStatus": {
+        "blockNumber": 1,
+        "timestamp": 1789747200
+      }
+    },
+    {
+      "results": [
+        {
+          "marketId": 156,
+          "tokenId": 5,
+          "metadata": {
+            "platformName": "Bybit",
+            "assetSymbol": "HYPE"
+          },
+          "imData": {
+            "maturity": 1789747200,
+            "name": "Bybit HYPE 18 Sep 2026",
+            "symbol": "BYBIT-HYPEUSDT-18SEP2026"
+          },
+          "state": "Normal",
+          "platform": {
+            "name": "Bybit",
+            "platformId": "Bybit"
+          }
+        }
+      ],
+      "cursor": {
+        "next": null,
+        "hasMore": false
+      },
+      "syncStatus": {
+        "blockNumber": 2,
+        "timestamp": 1789747210
+      }
+    }
+  ]
+}

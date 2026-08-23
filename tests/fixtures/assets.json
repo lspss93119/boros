@@ -1,0 +1,37 @@
+{
+  "results": [
+    {
+      "id": "USDT",
+      "address": "0x0000000000000000000000000000000000000003",
+      "tokenId": 3,
+      "name": "USD₮0",
+      "symbol": "USD₮0",
+      "decimals": 6,
+      "usdPrice": "1.0001",
+      "isCollateral": true,
+      "metadata": {"proSymbol": "USDT"}
+    },
+    {
+      "id": "HYPE",
+      "address": "0x0000000000000000000000000000000000000005",
+      "tokenId": 5,
+      "name": "HYPE",
+      "symbol": "HYPE",
+      "decimals": 18,
+      "usdPrice": "80.5",
+      "isCollateral": true,
+      "metadata": {"proSymbol": "HYPE"}
+    },
+    {
+      "id": "XAU",
+      "address": "0x00000000000000000000000000000000000000ff",
+      "tokenId": -1,
+      "name": "XAU",
+      "symbol": "XAU",
+      "decimals": 6,
+      "usdPrice": "4680.6",
+      "isCollateral": false,
+      "metadata": {"proSymbol": "XAU"}
+    }
+  ]
+}
