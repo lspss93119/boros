@@ -45,6 +45,21 @@ def test_venue_from_market_symbol_rejects_missing_prefix():
         venue_from_market_symbol("HYPEUSDT")
 
 
+def test_usdt_collateral_without_pro_symbol_uses_canonical_asset_id():
+    asset = {
+        "id": "USDT",
+        "address": "...",
+        "tokenId": 3,
+        "name": "USD₮0",
+        "symbol": "USD₮0",
+        "decimals": 6,
+        "usdPrice": "1.0",
+        "isCollateral": True,
+    }
+
+    assert normalize_assets({"results": [asset]})[3].symbol == "USDT"
+
+
 def test_assets_map_token_id_to_canonical_symbol_and_exclude_non_collateral():
     assets = normalize_assets(load_fixture("assets.json"))
 

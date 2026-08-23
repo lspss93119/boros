@@ -220,12 +220,18 @@ def normalize_assets(value: Any) -> dict[int, CollateralAsset]:
 
         metadata = raw.get("metadata", {})
         metadata = _require_mapping(metadata, "asset.metadata")
+        asset_id = raw.get("id")
         pro_symbol = metadata.get("proSymbol")
-        symbol = pro_symbol if isinstance(pro_symbol, str) and pro_symbol.strip() else raw.get("symbol")
+        if isinstance(pro_symbol, str) and pro_symbol.strip():
+            symbol = pro_symbol
+        elif isinstance(asset_id, str) and asset_id.strip():
+            # The official asset ID preserves identity for decorated raw symbols such as USD₮0.
+            symbol = asset_id
+        else:
+            symbol = raw.get("symbol")
         if not isinstance(symbol, str) or not symbol.strip():
             raise ValueError(f"collateral asset {token_id} is missing symbol")
 
-        asset_id = raw.get("id")
         address = raw.get("address")
         name = raw.get("name")
         decimals = raw.get("decimals")
