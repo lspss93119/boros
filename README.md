@@ -97,6 +97,21 @@ Phase 2 does not provide composite scores, grades, robust z-scores, funding- or
 capital-adjusted scoring, alerts, live Arbitrage with CrossEx integration, or
 trade execution.
 
+### Phase 4A Historical Arbitrage Explorer
+
+Build the static historical arbitrage payload from the Phase 1/2 DuckDB:
+
+```bash
+python3 build_arbitrage_site_data.py
+python3 -m http.server 8765
+```
+
+Open `http://127.0.0.1:8765/site/arbitrage.html`. The explorer is static,
+read-only research data using the production visualization notionals
+`$10,000`, `$25,000`, and `$50,000`. `executable_spread_apr` is a historical
+Boros fixed-rate executable spread, not CrossEx net APR. The existing APR
+Explorer remains at `site/index.html`.
+
 ### Phase 3 read-only live monitor
 
 The Phase 3 companion reads only `GET /api/opportunities` from the local

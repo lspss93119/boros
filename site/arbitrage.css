@@ -1,0 +1,86 @@
+#arbitrageApp .filters {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+#arbitrageApp main {
+  display: grid;
+  gap: 14px;
+}
+
+#arbitrageApp .chart-panel,
+#arbitrageApp .distribution-panel {
+  min-height: 0;
+}
+
+.arbitrage-chart-shell {
+  min-height: 260px;
+}
+
+.arbitrage-chart-shell canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 260px;
+}
+
+.distribution-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.distribution-meta strong {
+  color: var(--ink);
+}
+
+#arbitrageApp table tbody tr[data-structure-id] {
+  cursor: pointer;
+}
+
+#arbitrageApp table tbody tr[data-structure-id]:hover {
+  background: #f5f8f3;
+}
+
+.status-valid {
+  color: var(--green);
+  font-weight: 650;
+}
+
+.status-invalid {
+  color: var(--red);
+  font-weight: 650;
+}
+
+.empty-state {
+  color: var(--muted);
+  padding: 18px 0;
+  text-align: center;
+}
+
+@media (max-width: 850px) {
+  #arbitrageApp .filters {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+
+  #arbitrageApp .kpis {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  #arbitrageApp .filters,
+  #arbitrageApp .kpis {
+    grid-template-columns: 1fr;
+  }
+
+  #arbitrageApp .topbar {
+    flex-direction: column;
+  }
+
+  #arbitrageApp .top-actions {
+    justify-content: flex-start;
+  }
+}

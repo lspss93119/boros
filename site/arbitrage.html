@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Historical Arbitrage Explorer</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./arbitrage.css">
+</head>
+<body>
+  <div id="arbitrageApp">
+    <header class="topbar">
+      <div>
+        <h1 id="pageTitle" data-zh="歷史套利研究">Historical Arbitrage Explorer</h1>
+        <p id="pageSubtitle">Static historical Boros fixed-rate spread research across exact market structures.</p>
+      </div>
+      <div class="top-actions">
+        <a class="ghost-link" href="./index.html">APR Research</a>
+        <button id="languageToggle" type="button">繁體中文</button>
+      </div>
+    </header>
+
+    <section class="filters" aria-label="Arbitrage research filters">
+      <label>
+        <span id="assetLabel">Asset</span>
+        <select id="assetSelect"></select>
+      </label>
+      <label>
+        <span id="directionLabel">Direction</span>
+        <select id="directionSelect"></select>
+      </label>
+      <label>
+        <span id="expirationLabel">Expiration</span>
+        <select id="expirationSelect"></select>
+      </label>
+      <label>
+        <span id="notionalLabel">Notional</span>
+        <select id="notionalSelect"></select>
+      </label>
+    </section>
+
+    <main>
+      <section class="kpis" id="kpis" aria-label="Historical arbitrage KPIs"></section>
+
+      <section class="panel chart-panel">
+        <div class="panel-title">
+          <div>
+            <h2 id="historyTitle">Executable Spread History</h2>
+            <p id="historySubtitle">Daily aggregation only; missing UTC dates are not connected.</p>
+          </div>
+          <div class="chart-tabs" role="tablist" aria-label="Historical spread view">
+            <button class="active" id="spreadTab" data-view="spread" type="button">Executable Spread</button>
+            <button id="percentileTab" data-view="percentile" type="button">90D Percentile</button>
+          </div>
+        </div>
+        <div class="chart-shell arbitrage-chart-shell">
+          <canvas id="spreadChart" width="1180" height="430"></canvas>
+        </div>
+        <p class="chart-note" id="historyNote">Daily median and daily maximum use fully executable observations only.</p>
+      </section>
+
+      <section class="panel distribution-panel">
+        <div class="panel-title">
+          <div>
+            <h2 id="distributionTitle">Historical Distribution</h2>
+            <p id="distributionSubtitle">90-day fully executable spread distribution.</p>
+          </div>
+        </div>
+        <div class="chart-shell arbitrage-chart-shell">
+          <canvas id="distributionChart" width="1180" height="360"></canvas>
+        </div>
+        <div class="distribution-meta" id="distributionMeta"></div>
+      </section>
+
+      <section class="panel" id="notionalComparison">
+        <div class="panel-title">
+          <div>
+            <h2 id="notionalTitle">Notional Comparison</h2>
+            <p id="notionalSubtitle">All sizes use the same exact historical timestamp.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th id="notionalHead">Notional</th>
+                <th id="spreadHead">Executable Spread</th>
+                <th id="rankHead">90D Rank</th>
+                <th id="sampleHead">90D Samples</th>
+                <th id="statusHead">Execution Status</th>
+              </tr>
+            </thead>
+            <tbody id="notionalComparisonBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" id="leaderboard">
+        <div class="panel-title">
+          <div>
+            <h2 id="leaderboardTitle">Historical Opportunity Leaderboard</h2>
+            <p id="leaderboardSubtitle">Latest historical state, sorted by 90D rank.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th id="assetHead">Asset</th>
+                <th id="directionHead">Direction</th>
+                <th id="expirationHead">Expiration</th>
+                <th id="dteHead">DTE</th>
+                <th id="leaderSpreadHead">Executable Spread</th>
+                <th id="leaderRankHead">90D Rank</th>
+                <th id="leaderSampleHead">90D Samples</th>
+                <th id="leaderStatusHead">Execution Status</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboardBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="./arbitrage.js"></script>
+</body>
+</html>
