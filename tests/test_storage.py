@@ -75,6 +75,25 @@ def order_book_rows():
     ]
 
 
+def asset_price_rows():
+    return [
+        {
+            "asset": "HYPE",
+            "timestamp": 1787443200,
+            "price_usd": 2422.76754675,
+            "source_market_id": 155,
+            "source_path": "raw_indicators/asset-price/HYPE/market-155/export-ap-5m-1787443200-1787443200.csv",
+        },
+        {
+            "asset": "USDT",
+            "timestamp": 1787443200,
+            "price_usd": 1.0,
+            "source_market_id": None,
+            "source_path": "synthetic/stable/USDT",
+        },
+    ]
+
+
 def test_parquet_roundtrip_and_duckdb_view(tmp_path):
     parquet_root = tmp_path / "parquet"
     database_path = tmp_path / "boros.duckdb"
@@ -113,6 +132,7 @@ def test_catalog_exposes_all_views_without_importing_parquet_as_tables(tmp_path)
         "settlements",
         "ohlcv_5m",
         "order_books_5m",
+        "asset_prices",
         "markets",
         "assets",
     }
@@ -126,6 +146,30 @@ def test_catalog_exposes_all_views_without_importing_parquet_as_tables(tmp_path)
         }
         assert expected_views <= actual_views
         assert connection.execute("SELECT count(*) FROM funding_rates").fetchone() == (0,)
+
+
+def test_asset_prices_round_trip_partition_and_catalog_rebuild(tmp_path):
+    parquet_root = tmp_path / "parquet"
+    database_path = tmp_path / "boros.duckdb"
+    rows = asset_price_rows()
+
+    dataset_path = write_dataset(rows, "asset_prices", parquet_root)
+    build_duckdb_catalog(parquet_root, database_path)
+    write_dataset(rows, "asset_prices", parquet_root)
+    build_duckdb_catalog(parquet_root, database_path)
+
+    assert list(dataset_path.glob("asset=HYPE/year=*/month=*/*.parquet"))
+    assert list(dataset_path.glob("asset=USDT/year=*/month=*/*.parquet"))
+
+    with duckdb.connect(str(database_path), read_only=True) as connection:
+        assert connection.execute(
+            "SELECT asset, timestamp, price_usd, source_market_id "
+            "FROM asset_prices ORDER BY asset"
+        ).fetchall() == [
+            ("HYPE", 1787443200, 2422.76754675, 155),
+            ("USDT", 1787443200, 1.0, None),
+        ]
+        assert connection.execute("SELECT count(*) FROM asset_prices").fetchone() == (2,)
 
 
 def test_order_books_nested_levels_round_trip_and_rebuild_is_idempotent(tmp_path):

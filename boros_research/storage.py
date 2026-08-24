@@ -105,6 +105,15 @@ CANONICAL_SCHEMAS: dict[str, pa.Schema] = {
         ("year", pa.string()),
         ("month", pa.string()),
     ),
+    "asset_prices": _schema(
+        ("asset", pa.string()),
+        ("timestamp", pa.int64()),
+        ("price_usd", pa.float64()),
+        ("source_market_id", pa.int64()),
+        ("source_path", pa.string()),
+        ("year", pa.string()),
+        ("month", pa.string()),
+    ),
     "markets": _schema(
         ("market_id", pa.int64()),
         ("token_id", pa.int64()),
@@ -132,6 +141,7 @@ PARTITION_COLUMNS: dict[str, tuple[str, ...]] = {
     "settlements": ("asset", "year", "month"),
     "ohlcv_5m": ("asset", "year", "month"),
     "order_books_5m": ("asset", "year", "month"),
+    "asset_prices": ("asset", "year", "month"),
     "markets": (),
     "assets": (),
 }
@@ -149,6 +159,7 @@ _TIMESTAMP_FIELD = {
     "settlements": "timestamp",
     "ohlcv_5m": "period_start_timestamp",
     "order_books_5m": "grid_timestamp",
+    "asset_prices": "timestamp",
 }
 
 
