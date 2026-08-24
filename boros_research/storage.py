@@ -144,6 +144,58 @@ CANONICAL_SCHEMAS: dict[str, pa.Schema] = {
         ("year", pa.string()),
         ("month", pa.string()),
     ),
+    "historical_benchmarks": _schema(
+        ("timestamp", pa.int64()),
+        ("asset", pa.string()),
+        ("maturity", pa.date32()),
+        ("dte_days", pa.int64()),
+        ("dte_bucket", pa.string()),
+        ("token_id", pa.int64()),
+        ("short_market_id", pa.int64()),
+        ("short_venue", pa.string()),
+        ("long_market_id", pa.int64()),
+        ("long_venue", pa.string()),
+        ("notional_usd", pa.float64()),
+        ("executable_spread_apr", pa.float64()),
+        ("benchmark_level", pa.string()),
+        ("percentile_30d", pa.float64()),
+        ("percentile_90d", pa.float64()),
+        ("percentile_lifetime", pa.float64()),
+        ("sample_count_30d", pa.int64()),
+        ("sample_count_90d", pa.int64()),
+        ("sample_count_lifetime", pa.int64()),
+        ("year", pa.string()),
+        ("month", pa.string()),
+    ),
+    "spread_episodes": _schema(
+        ("asset", pa.string()),
+        ("short_venue", pa.string()),
+        ("long_venue", pa.string()),
+        ("token_id", pa.int64()),
+        ("notional_usd", pa.float64()),
+        ("dte_bucket", pa.string()),
+        ("threshold_percentile", pa.float64()),
+        ("start_timestamp", pa.int64()),
+        ("end_timestamp", pa.int64()),
+        ("duration_minutes", pa.int64()),
+        ("observation_count", pa.int64()),
+        ("peak_spread_apr", pa.float64()),
+        ("mean_spread_apr", pa.float64()),
+        ("year", pa.string()),
+        ("month", pa.string()),
+    ),
+    "persistence_summary": _schema(
+        ("asset", pa.string()),
+        ("short_venue", pa.string()),
+        ("long_venue", pa.string()),
+        ("token_id", pa.int64()),
+        ("notional_usd", pa.float64()),
+        ("dte_bucket", pa.string()),
+        ("threshold_percentile", pa.float64()),
+        ("episode_count", pa.int64()),
+        ("median_duration_minutes", pa.float64()),
+        ("p75_duration_minutes", pa.float64()),
+    ),
     "markets": _schema(
         ("market_id", pa.int64()),
         ("token_id", pa.int64()),
@@ -173,6 +225,9 @@ PARTITION_COLUMNS: dict[str, tuple[str, ...]] = {
     "order_books_5m": ("asset", "year", "month"),
     "asset_prices": ("asset", "year", "month"),
     "executable_opportunities": ("asset", "year", "month"),
+    "historical_benchmarks": ("asset", "year", "month"),
+    "spread_episodes": ("asset", "year", "month"),
+    "persistence_summary": ("asset",),
     "markets": (),
     "assets": (),
 }
@@ -192,6 +247,8 @@ _TIMESTAMP_FIELD = {
     "order_books_5m": "grid_timestamp",
     "asset_prices": "timestamp",
     "executable_opportunities": "timestamp",
+    "historical_benchmarks": "timestamp",
+    "spread_episodes": "start_timestamp",
 }
 
 
@@ -395,4 +452,44 @@ def build_duckdb_catalog(
                     f"{_empty_view_sql(dataset)}"
                 )
             connection.execute(sql)
+        connection.execute(
+            """
+            CREATE OR REPLACE VIEW historical_benchmark_status AS
+            SELECT
+                h.*,
+                CASE WHEN p90.start_timestamp IS NOT NULL THEN TRUE ELSE FALSE END
+                    AS current_p90_above_threshold,
+                p90.start_timestamp AS current_p90_episode_start_timestamp,
+                CASE
+                    WHEN p90.start_timestamp IS NULL THEN NULL
+                    ELSE CAST((h.timestamp - p90.start_timestamp) / 60 AS BIGINT)
+                END AS current_p90_persistence_minutes,
+                CASE WHEN p95.start_timestamp IS NOT NULL THEN TRUE ELSE FALSE END
+                    AS current_p95_above_threshold,
+                p95.start_timestamp AS current_p95_episode_start_timestamp,
+                CASE
+                    WHEN p95.start_timestamp IS NULL THEN NULL
+                    ELSE CAST((h.timestamp - p95.start_timestamp) / 60 AS BIGINT)
+                END AS current_p95_persistence_minutes
+            FROM historical_benchmarks h
+            LEFT JOIN spread_episodes p90
+                ON p90.asset = h.asset
+                AND p90.short_venue = h.short_venue
+                AND p90.long_venue = h.long_venue
+                AND p90.token_id = h.token_id
+                AND p90.notional_usd = h.notional_usd
+                AND p90.dte_bucket = h.dte_bucket
+                AND p90.threshold_percentile = 90.0
+                AND h.timestamp BETWEEN p90.start_timestamp AND p90.end_timestamp
+            LEFT JOIN spread_episodes p95
+                ON p95.asset = h.asset
+                AND p95.short_venue = h.short_venue
+                AND p95.long_venue = h.long_venue
+                AND p95.token_id = h.token_id
+                AND p95.notional_usd = h.notional_usd
+                AND p95.dte_bucket = h.dte_bucket
+                AND p95.threshold_percentile = 95.0
+                AND h.timestamp BETWEEN p95.start_timestamp AND p95.end_timestamp
+            """
+        )
     return database_path

@@ -306,3 +306,87 @@ def test_rebuilding_dataset_and_catalog_does_not_duplicate_rows(tmp_path):
 
     with duckdb.connect(str(database_path), read_only=True) as connection:
         assert connection.execute("SELECT count(*) FROM market_data").fetchone() == (2,)
+
+
+def phase2_rows():
+    benchmark = {
+        "timestamp": 1_787_443_200,
+        "asset": "HYPE",
+        "maturity": date(2026, 9, 25),
+        "dte_days": 32,
+        "dte_bucket": "22-45",
+        "token_id": 3,
+        "short_market_id": 155,
+        "short_venue": "HYPERLIQUID",
+        "long_market_id": 201,
+        "long_venue": "BYBIT",
+        "notional_usd": 2_000.0,
+        "executable_spread_apr": 0.047,
+        "benchmark_level": "dte",
+        "percentile_30d": 95.0,
+        "percentile_90d": 92.0,
+        "percentile_lifetime": 96.0,
+        "sample_count_30d": 60,
+        "sample_count_90d": 80,
+        "sample_count_lifetime": 100,
+    }
+    episode = {
+        "asset": "HYPE",
+        "short_venue": "HYPERLIQUID",
+        "long_venue": "BYBIT",
+        "token_id": 3,
+        "notional_usd": 2_000.0,
+        "dte_bucket": "22-45",
+        "threshold_percentile": 95.0,
+        "start_timestamp": 1_787_443_200,
+        "end_timestamp": 1_787_443_500,
+        "duration_minutes": 5,
+        "observation_count": 2,
+        "peak_spread_apr": 0.05,
+        "mean_spread_apr": 0.048,
+    }
+    summary = {
+        "asset": "HYPE",
+        "short_venue": "HYPERLIQUID",
+        "long_venue": "BYBIT",
+        "token_id": 3,
+        "notional_usd": 2_000.0,
+        "dte_bucket": "22-45",
+        "threshold_percentile": 95.0,
+        "episode_count": 1,
+        "median_duration_minutes": 5.0,
+        "p75_duration_minutes": 5.0,
+    }
+    return [benchmark], [episode], [summary]
+
+
+def test_phase2_benchmark_storage_and_current_persistence_view(tmp_path):
+    parquet_root = tmp_path / "parquet"
+    database_path = tmp_path / "boros.duckdb"
+    benchmark, episodes, summaries = phase2_rows()
+
+    write_dataset(benchmark, "historical_benchmarks", parquet_root)
+    write_dataset(episodes, "spread_episodes", parquet_root)
+    write_dataset(summaries, "persistence_summary", parquet_root)
+    build_duckdb_catalog(parquet_root, database_path)
+    build_duckdb_catalog(parquet_root, database_path)
+
+    with duckdb.connect(str(database_path), read_only=True) as connection:
+        assert connection.execute(
+            "SELECT count(*), max(percentile_lifetime) FROM historical_benchmarks"
+        ).fetchone() == (1, 96.0)
+        assert connection.execute(
+            "SELECT count(*), max(duration_minutes) FROM spread_episodes"
+        ).fetchone() == (1, 5)
+        assert connection.execute(
+            "SELECT episode_count, median_duration_minutes FROM persistence_summary"
+        ).fetchone() == (1, 5.0)
+        assert connection.execute(
+            """
+            SELECT
+                current_p90_above_threshold,
+                current_p95_above_threshold,
+                current_p95_persistence_minutes
+            FROM historical_benchmark_status
+            """
+        ).fetchone() == (False, True, 0)

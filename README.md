@@ -67,9 +67,35 @@ zero parse failures and all selected source files present.
 `executable_spread_apr` is a historical Boros fixed-rate executable spread. It
 is not net APR, profit, or a four-leg realized return.
 
-Phase 1 does not provide historical percentiles or grades, persistence
-episodes, live Arbitrage with CrossEx integration, notifications, or trade
-execution. Those are deferred to later phases.
+Phase 1 does not provide grades, live Arbitrage with CrossEx integration,
+notifications, or trade execution.
+
+### Phase 2 historical benchmarking
+
+Build simple causal historical context from the existing Phase 1 DuckDB
+without downloading Phase 1 history again:
+
+```bash
+python3 -m boros_research.cli benchmark
+```
+
+The benchmark build writes three derived datasets and DuckDB views:
+
+- `historical_benchmarks`: 30-day, 90-day, and lifetime empirical percentiles
+  for fully executable spreads, keeping each notional and directed venue pair
+  independent;
+- `spread_episodes`: contiguous 5-minute p90 and p95 episodes;
+- `persistence_summary`: episode count, median duration, and p75 duration by
+  cohort.
+
+DTE-specific cohorts are used when they have at least 50 causal observations;
+otherwise the benchmark falls back once to the compatible pair cohort. Future
+observations are never used. `executable_spread_apr` remains a historical
+Boros fixed-rate executable spread, not net APR, profit, or a four-leg return.
+
+Phase 2 does not provide composite scores, grades, robust z-scores, funding- or
+capital-adjusted scoring, alerts, live Arbitrage with CrossEx integration, or
+trade execution.
 
 ## Run
 

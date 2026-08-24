@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+from .benchmark import build_historical_benchmarks
 from .build import BuildPaths, run_build
 from .config import (
     DUCKDB_PATH,
@@ -147,6 +148,16 @@ def _positive_workers(value: str) -> int:
     return workers
 
 
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be an integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be greater than zero")
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Boros historical research tools")
     subparsers = parser.add_subparsers(dest="command")
@@ -201,6 +212,17 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument(
         "--report-path", type=Path, default=Path("data/build_report.json")
     )
+    benchmark = subparsers.add_parser(
+        "benchmark", help="calculate causal historical spread benchmarks and episodes"
+    )
+    benchmark.add_argument("--parquet-dir", type=Path, default=PARQUET_DIR)
+    benchmark.add_argument("--duckdb-path", type=Path, default=DUCKDB_PATH)
+    benchmark.add_argument(
+        "--min-samples",
+        type=_positive_int,
+        default=50,
+        help="minimum causal cohort sample count (default: 50)",
+    )
     return parser
 
 
@@ -239,6 +261,26 @@ def _run_build_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_benchmark_command(args: argparse.Namespace) -> int:
+    result = build_historical_benchmarks(
+        database_path=args.duckdb_path,
+        parquet_root=args.parquet_dir,
+        min_samples=args.min_samples,
+    )
+    print(f"Benchmark rows: {result.benchmark_row_count}")
+    print(f"Persistence episode rows: {result.episode_row_count}")
+    print(f"Persistence summary rows: {result.summary_row_count}")
+    print(f"DTE benchmark rows: {result.dte_benchmark_row_count}")
+    print(f"Pair fallback rows: {result.pair_fallback_row_count}")
+    print(f"Insufficient benchmark rows: {result.insufficient_benchmark_row_count}")
+    fallback_rate = (
+        "NULL" if result.fallback_rate is None else f"{result.fallback_rate:.6f}"
+    )
+    print(f"Pair fallback rate: {fallback_rate}")
+    print(f"Elapsed seconds: {result.elapsed_seconds:.3f}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
@@ -254,6 +296,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_download_command(args)
         if args.command == "build":
             return _run_build_command(args)
+        if args.command == "benchmark":
+            return _run_benchmark_command(args)
         parser.error(f"unknown command: {args.command}")
     except DownloadBatchError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
