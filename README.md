@@ -56,6 +56,21 @@ Boros MCP is a Codex development/research assistant only. The production
 historical pipeline does not depend on MCP, an LLM, an agent key, or a wallet,
 and it never places orders.
 
+### Phase 1 complete
+
+Phase 1 provides historical archive ingestion, 5-minute combined-book
+reconstruction, collateral USD pricing, `$1k/$2k/$5k/$10k/$25k/$50k` book
+walking, directed cross-venue executable Boros fixed-rate spreads, Parquet,
+DuckDB, and build quality reports. The official historical build completed with
+zero parse failures and all selected source files present.
+
+`executable_spread_apr` is a historical Boros fixed-rate executable spread. It
+is not net APR, profit, or a four-leg realized return.
+
+Phase 1 does not provide historical percentiles or grades, persistence
+episodes, live Arbitrage with CrossEx integration, notifications, or trade
+execution. Those are deferred to later phases.
+
 ## Run
 
 ```bash
