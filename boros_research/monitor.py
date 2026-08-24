@@ -315,7 +315,7 @@ class LiveMonitor:
                     urgent_count += 1
                 elif percentile >= 95.0:
                     normal_count += 1
-                decision = self.state.observe(
+                decision = self.state.evaluate(
                     primary.identity,
                     primary.candidate.timestamp if primary.candidate else self.now_timestamp(),
                     percentile,
@@ -324,7 +324,7 @@ class LiveMonitor:
             else:
                 if primary.pair.reasons:
                     skipped.append("cross_ex_economics_unavailable")
-                decision = self.state.observe(
+                decision = self.state.evaluate(
                     primary.identity,
                     primary.candidate.timestamp if primary.candidate else self.now_timestamp(),
                     None,
@@ -348,8 +348,30 @@ class LiveMonitor:
                 )
                 message = format_opportunity_message(alert)
                 messages.append(message)
-                if not dry_run and self.telegram_send is not None:
-                    self.telegram_send(message)
+                delivery_timestamp = (
+                    primary.candidate.timestamp
+                    if primary.candidate is not None
+                    else self.now_timestamp()
+                )
+                if dry_run:
+                    # Dry runs use an ephemeral store and intentionally
+                    # simulate a successful delivery for one-cycle state.
+                    self.state.commit_alert_delivered(
+                        primary.identity, delivery_timestamp, decision.severity
+                    )
+                elif self.telegram_send is None:
+                    skipped.append("telegram_sender_unavailable")
+                else:
+                    try:
+                        self.telegram_send(message)
+                    except Exception:
+                        # Keep the alert armed so a later cycle can make one
+                        # fresh delivery attempt.  Never retry in this cycle.
+                        skipped.append("telegram_send_failed")
+                    else:
+                        self.state.commit_alert_delivered(
+                            primary.identity, delivery_timestamp, decision.severity
+                        )
 
         self.state.mark_missing_except(active_state_keys, self.now_timestamp())
         return MonitorCycleResult(

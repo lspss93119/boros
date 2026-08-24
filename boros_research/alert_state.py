@@ -11,6 +11,7 @@ from pathlib import Path
 
 
 REARM_SECONDS = 6 * 60 * 60
+DEFAULT_POLL_INTERVAL_SECONDS = 60
 P95 = 95.0
 P99 = 99.0
 
@@ -86,9 +87,17 @@ def _default_snapshot(identity: AlertIdentity) -> AlertSnapshot:
 class AlertStateStore:
     """SQLite state store that never writes into the Phase 1/2 DuckDB."""
 
-    def __init__(self, path: str | Path, *, rearm_seconds: int = REARM_SECONDS) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        rearm_seconds: int = REARM_SECONDS,
+        poll_interval_seconds: int = DEFAULT_POLL_INTERVAL_SECONDS,
+    ) -> None:
         if rearm_seconds <= 0:
             raise ValueError("rearm_seconds must be positive")
+        if poll_interval_seconds <= 0:
+            raise ValueError("poll_interval_seconds must be positive")
         self.path = Path(path)
         if str(path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -121,6 +130,8 @@ class AlertStateStore:
             """
         )
         self.rearm_seconds = rearm_seconds
+        self.poll_interval_seconds = poll_interval_seconds
+        self.continuity_tolerance_seconds = max(2 * poll_interval_seconds, 120)
 
     def close(self) -> None:
         self._connection.close()
@@ -192,7 +203,7 @@ class AlertStateStore:
             (timestamp, identity.key),
         )
 
-    def observe(
+    def evaluate(
         self,
         identity: AlertIdentity,
         timestamp: int,
@@ -219,17 +230,36 @@ class AlertStateStore:
             p99_above = value >= P99
             snapshot = self.snapshot(identity)
 
-            p95_run_start = timestamp if p95_above and snapshot.p95_run_start is None else snapshot.p95_run_start
-            p95_count = snapshot.p95_observation_count + 1 if p95_above else 0
+            continuity_broken = (
+                snapshot.last_success_timestamp is not None
+                and timestamp - snapshot.last_success_timestamp
+                > self.continuity_tolerance_seconds
+            )
+
+            p95_run_start = (
+                None if continuity_broken else snapshot.p95_run_start
+            )
+            p95_observation_count = (
+                0 if continuity_broken else snapshot.p95_observation_count
+            )
+            p99_run_start = (
+                None if continuity_broken else snapshot.p99_run_start
+            )
+            p99_observation_count = (
+                0 if continuity_broken else snapshot.p99_observation_count
+            )
+            p95_below_since = None if continuity_broken else snapshot.p95_below_since
+            p99_below_since = None if continuity_broken else snapshot.p99_below_since
+
+            p95_run_start = timestamp if p95_above and p95_run_start is None else p95_run_start
+            p95_count = p95_observation_count + 1 if p95_above else 0
             p95_last = timestamp if p95_above else None
-            p99_run_start = timestamp if p99_above and snapshot.p99_run_start is None else snapshot.p99_run_start
-            p99_count = snapshot.p99_observation_count + 1 if p99_above else 0
+            p99_run_start = timestamp if p99_above and p99_run_start is None else p99_run_start
+            p99_count = p99_observation_count + 1 if p99_above else 0
             p99_last = timestamp if p99_above else None
 
             p95_armed = snapshot.p95_armed
             p99_armed = snapshot.p99_armed
-            p95_below_since = snapshot.p95_below_since
-            p99_below_since = snapshot.p99_below_since
             if not p95_armed and p95_below_since is not None and timestamp - p95_below_since >= self.rearm_seconds:
                 p95_armed = True
                 p95_below_since = None
@@ -255,14 +285,8 @@ class AlertStateStore:
             p99_last_alert = snapshot.p99_last_alert_timestamp
             if p99_above and p99_armed:
                 severity = "URGENT"
-                p99_armed = False
-                p99_last_alert = timestamp
-                # A p99 first hit is one alert, not a normal p95 followed by an urgent alert.
-                p95_armed = False
             elif p95_above and p95_armed:
                 severity = "NORMAL"
-                p95_armed = False
-                p95_last_alert = timestamp
 
             self._connection.execute(
                 """
@@ -301,6 +325,72 @@ class AlertStateStore:
         run_start = p99_run_start if p99_above else p95_run_start
         duration = 0 if run_start is None else max(0, (timestamp - run_start) // 60)
         return AlertDecision(severity, duration, p95_above, p99_above)
+
+    def commit_alert_delivered(
+        self,
+        identity: AlertIdentity,
+        timestamp: int,
+        severity: str,
+    ) -> None:
+        """Consume an alert only after its delivery has succeeded.
+
+        The caller must perform any network operation before invoking this
+        method.  This transaction is intentionally short and never spans a
+        Telegram request.
+        """
+        if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0:
+            raise ValueError("timestamp must be a non-negative integer")
+        if severity not in {"NORMAL", "URGENT"}:
+            raise ValueError("severity must be NORMAL or URGENT")
+
+        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            self._ensure(identity)
+            snapshot = self.snapshot(identity)
+            if severity == "URGENT" and snapshot.p99_armed:
+                self._connection.execute(
+                    """
+                    UPDATE alert_state SET
+                        p95_armed = 0,
+                        p99_armed = 0,
+                        p99_last_alert_timestamp = ?
+                    WHERE identity_key = ?
+                    """,
+                    (timestamp, identity.key),
+                )
+            elif severity == "NORMAL" and snapshot.p95_armed:
+                self._connection.execute(
+                    """
+                    UPDATE alert_state SET
+                        p95_armed = 0,
+                        p95_last_alert_timestamp = ?
+                    WHERE identity_key = ?
+                    """,
+                    (timestamp, identity.key),
+                )
+            self._connection.execute("COMMIT")
+        except Exception:
+            self._connection.execute("ROLLBACK")
+            raise
+
+    def observe(
+        self,
+        identity: AlertIdentity,
+        timestamp: int,
+        percentile_90d: float | None,
+        *,
+        valid: bool = True,
+    ) -> AlertDecision:
+        """Observe and immediately simulate a successful alert delivery.
+
+        Production monitoring uses :meth:`evaluate` and commits only after
+        the sender succeeds.  This compatibility helper is retained for
+        callers that intentionally model delivery in one synchronous step.
+        """
+        decision = self.evaluate(identity, timestamp, percentile_90d, valid=valid)
+        if decision.severity is not None:
+            self.commit_alert_delivered(identity, timestamp, decision.severity)
+        return decision
 
     def mark_unknown(self, identity: AlertIdentity, timestamp: int) -> None:
         self._connection.execute("BEGIN IMMEDIATE")

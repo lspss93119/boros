@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from boros_research.alert_state import AlertStateStore
 from boros_research.crossex_client import (
     CrossExCosts,
     CrossExGroup,
@@ -54,14 +55,16 @@ def response(size):
 
 
 class FakeBenchmark:
+    percentile = 96.0
+
     def lookup_many(self, candidates):
         return {
             item.candidate_id: LiveBenchmarkResult(
                 candidate_id=item.candidate_id,
                 benchmark_level="dte",
                 dte_bucket=item.dte_bucket,
-                percentile_30d=96.0,
-                percentile_90d=96.0,
+                percentile_30d=self.percentile,
+                percentile_90d=self.percentile,
                 percentile_lifetime=95.0,
                 sample_count_30d=100,
                 sample_count_90d=100,
@@ -90,6 +93,12 @@ class FakeState:
     def observe(self, identity, timestamp, percentile, *, valid=True):
         self.observations.append((identity, timestamp, percentile, valid))
         return type("Decision", (), {"severity": None, "live_detected_minutes": 0})()
+
+    def evaluate(self, identity, timestamp, percentile, *, valid=True):
+        return self.observe(identity, timestamp, percentile, valid=valid)
+
+    def commit_alert_delivered(self, _identity, _timestamp, _severity):
+        return None
 
     def mark_missing_except(self, _ids, _timestamp):
         return None
@@ -177,3 +186,90 @@ def test_stale_benchmark_suppresses_candidates(tmp_path):
 
     assert result.normal_candidate_count == 0
     assert result.urgent_candidate_count == 0
+
+
+class VariableBenchmark(FakeBenchmark):
+    def __init__(self, percentile):
+        self.percentile = percentile
+
+
+def real_state_monitor(tmp_path, benchmark, telegram_send):
+    state = AlertStateStore(tmp_path / "live_monitor.sqlite3", poll_interval_seconds=60)
+    monitor = LiveMonitor(
+        client=FakeClient(),
+        benchmark=benchmark,
+        state=state,
+        telegram_send=telegram_send,
+        now_timestamp=lambda: 1_800_000_000,
+        database_path=tmp_path / "unused.duckdb",
+    )
+    return monitor, state
+
+
+def test_p95_without_telegram_sender_keeps_state_armed(tmp_path):
+    monitor, state = real_state_monitor(tmp_path, VariableBenchmark(96.0), None)
+
+    monitor.run_once()
+
+    identity = state.identities()[0]
+    assert state.snapshot(identity).p95_armed is True
+
+
+def test_p95_telegram_failure_keeps_state_armed(tmp_path):
+    def fail(_message):
+        raise RuntimeError("telegram unavailable")
+
+    monitor, state = real_state_monitor(tmp_path, VariableBenchmark(96.0), fail)
+
+    result = monitor.run_once()
+
+    identity = state.identities()[0]
+    assert result.messages
+    assert state.snapshot(identity).p95_armed is True
+
+
+def test_next_successful_poll_delivers_and_disarms_p95(tmp_path):
+    sent = []
+    monitor, state = real_state_monitor(tmp_path, VariableBenchmark(96.0), None)
+
+    monitor.run_once()
+    monitor.telegram_send = sent.append
+    monitor.run_once()
+
+    identity = state.identities()[0]
+    assert len(sent) == 1
+    assert state.snapshot(identity).p95_armed is False
+
+
+def test_failed_p99_delivery_keeps_p95_and_p99_armed(tmp_path):
+    def fail(_message):
+        raise RuntimeError("telegram unavailable")
+
+    monitor, state = real_state_monitor(tmp_path, VariableBenchmark(99.0), fail)
+
+    monitor.run_once()
+
+    identity = state.identities()[0]
+    snapshot = state.snapshot(identity)
+    assert snapshot.p95_armed is True
+    assert snapshot.p99_armed is True
+
+
+def test_successful_p95_then_p99_sends_urgent_escalation(tmp_path):
+    sent = []
+    benchmark = VariableBenchmark(96.0)
+    monitor, state = real_state_monitor(tmp_path, benchmark, sent.append)
+
+    first = monitor.run_once()
+    benchmark.percentile = 99.0
+    second = monitor.run_once()
+
+    identity = state.identities()[0]
+    snapshot = state.snapshot(identity)
+    assert first.normal_candidate_count == 1
+    assert second.urgent_candidate_count == 1
+    assert len(sent) == 2
+    assert "歷史前 5%" in sent[0]
+    assert "歷史前 1%" in sent[1]
+    assert snapshot.p95_armed is False
+    assert snapshot.p99_armed is False

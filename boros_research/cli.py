@@ -343,7 +343,10 @@ def _run_monitor_command(args: argparse.Namespace) -> int:
     )
     # Dry runs deliberately use ephemeral state so a rehearsal cannot disarm
     # a production alert or count as six hours below a threshold.
-    state = AlertStateStore(":memory:" if args.dry_run else args.state_path)
+    state = AlertStateStore(
+        ":memory:" if args.dry_run else args.state_path,
+        poll_interval_seconds=args.interval,
+    )
     sender = _telegram_sender() if not args.dry_run else None
     try:
         monitor = LiveMonitor(

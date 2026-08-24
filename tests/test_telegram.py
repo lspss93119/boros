@@ -80,6 +80,7 @@ def test_chinese_message_contains_precise_economic_labels_and_no_nulls():
     assert "$10,000" in message and "$25,000" in message and "$50,000" in message
     assert "可成交利差：7.10%" in message
     assert "90天歷史排名：P96.8" in message
+    assert "90D P96.8" in message
     assert "淨資本年化" in message
     assert "模型最低資本" in message
     assert "預估淨收益" in message

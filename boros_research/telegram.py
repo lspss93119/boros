@@ -76,7 +76,7 @@ def _size_line(size: SizeMessage) -> str:
         return f"{label}｜CrossEx 資料不足"
     if size.pair.exec_spread_apr is None:
         return f"{label}｜不可完整執行"
-    percentile = "—" if size.benchmark is None else _percentile(size.benchmark.percentile_90d)
+    percentile = "—" if size.benchmark is None else f"90D {_percentile(size.benchmark.percentile_90d)}"
     net_apr = _apr(size.pair.net_fixed_apr_on_capital)
     return f"{label}｜利差 {_apr(size.pair.exec_spread_apr)}｜{percentile}｜淨APR {net_apr}"
 
