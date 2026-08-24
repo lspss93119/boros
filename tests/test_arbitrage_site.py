@@ -208,17 +208,22 @@ const source = fs.readFileSync("site/arbitrage.js", "utf8");
 const end = source.lastIndexOf("\nload();");
 const nodes = new Map();
 function node(id) {
-  return {
+  const element = {
     id,
     value: "",
     hidden: false,
-    innerHTML: "",
     textContent: "",
     children: [],
     classList: {toggle() {}},
     appendChild(child) { this.children.push(child); },
     addEventListener() {},
   };
+  let innerHTML = "";
+  Object.defineProperty(element, "innerHTML", {
+    get() { return innerHTML; },
+    set(value) { innerHTML = value; this.children = []; },
+  });
+  return element;
 }
 [
   "pageTitle", "pageSubtitle", "languageToggle", "assetLabel", "directionLabel",
@@ -241,17 +246,27 @@ const windowStub = {
 };
 const structures = [
   {id: "btc-feb", asset: "BTC", tokenId: 1, maturity: "2026-02-27", shortVenue: "HYPERLIQUID", longVenue: "BINANCE", shortMarketId: 49, longMarketId: 48},
+  {id: "btc-feb-alt", asset: "BTC", tokenId: 1, maturity: "2026-02-27", shortVenue: "HYPERLIQUID", longVenue: "BINANCE", shortMarketId: 50, longMarketId: 51},
   {id: "btc-mar", asset: "BTC", tokenId: 1, maturity: "2026-03-27", shortVenue: "HYPERLIQUID", longVenue: "BINANCE", shortMarketId: 67, longMarketId: 68},
 ];
 const script = `${source.slice(0, end)}
 state.data = {structures};
 state.asset = "BTC";
 state.direction = "HYPERLIQUID|BINANCE";
+state.expiration = "2026-03-27";
+populateFilters();
+const normal = {
+  hidden: el.marketFilter.hidden,
+  marketOptions: el.market.children.length,
+};
 state.expiration = "2026-02-27";
+state.market = "";
 populateFilters();
 JSON.stringify({
   bound: el.marketFilter === nodes.get("marketFilter"),
-  hidden: el.marketFilter.hidden,
+  normal,
+  ambiguousHidden: el.marketFilter.hidden,
+  ambiguousMarketOptions: el.market.children.length,
   directionValues: [...el.direction.children].map(option => option.value),
   expirationValues: [...el.expiration.children].map(option => option.value),
   notionalValues: [...el.notional.children].map(option => option.value),
@@ -274,10 +289,34 @@ process.stdout.write(vm.runInNewContext(script, {
     )
     output = json.loads(result.stdout)
     assert output["bound"] is True
-    assert output["hidden"] is True
+    assert output["normal"] == {"hidden": True, "marketOptions": 0}
+    assert output["ambiguousHidden"] is False
+    assert output["ambiguousMarketOptions"] == 3
     assert output["directionValues"] == ["HYPERLIQUID|BINANCE"]
     assert output["expirationValues"] == ["2026-02-27", "2026-03-27"]
     assert output["notionalValues"] == [10000, 25000, 50000]
+
+
+def test_arbitrage_market_filter_hidden_css_is_scoped_and_production_is_unambiguous():
+    html = (ROOT / "site" / "arbitrage.html").read_text(encoding="utf-8")
+    css = (ROOT / "site" / "arbitrage.css").read_text(encoding="utf-8")
+    javascript = (ROOT / "site" / "arbitrage.js").read_text(encoding="utf-8")
+    assert 'id="marketFilter"' in html
+    assert "hidden" in html
+    assert "#arbitrageApp #marketFilter[hidden]" in css
+    assert "#arbitrageApp #marketFilter[hidden] {\n  display: none;\n}" in css
+    assert ".filters.market-ambiguous" in css
+    assert "grid-template-columns: repeat(5" in css
+    assert "el.marketFilter.hidden = !ambiguous" in javascript
+
+    data = json.loads((ROOT / "site" / "data" / "boros_arbitrage_site_data.json").read_text(encoding="utf-8"))
+    groups = {}
+    for structure in data["structures"]:
+        key = (structure["asset"], structure["shortVenue"], structure["longVenue"], structure["maturity"])
+        groups.setdefault(key, set()).add(
+            (structure["tokenId"], structure["shortMarketId"], structure["longMarketId"])
+        )
+    assert sum(len(values) > 1 for values in groups.values()) == 0
 
 
 def test_apr_explorer_uses_taiwan_traditional_chinese():

@@ -2,6 +2,10 @@
   grid-template-columns: repeat(4, minmax(150px, 1fr));
 }
 
+#arbitrageApp #marketFilter[hidden] {
+  display: none;
+}
+
 #arbitrageApp .filters.market-ambiguous {
   grid-template-columns: repeat(5, minmax(120px, 1fr));
 }
