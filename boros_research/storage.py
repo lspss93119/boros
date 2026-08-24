@@ -18,6 +18,14 @@ from .config import DUCKDB_PATH, PARQUET_DIR
 SCHEMA_VERSION = 1
 
 
+_BOOK_LEVEL_TYPE = pa.struct(
+    [
+        pa.field("rate_apr", pa.float64()),
+        pa.field("size_collateral", pa.float64()),
+    ]
+)
+
+
 def _schema(*fields: tuple[str, pa.DataType]) -> pa.Schema:
     return pa.schema([pa.field(name, data_type) for name, data_type in fields])
 
@@ -79,6 +87,24 @@ CANONICAL_SCHEMAS: dict[str, pa.Schema] = {
         ("year", pa.string()),
         ("month", pa.string()),
     ),
+    # Keep complete visible depth as list<struct> values instead of one row
+    # per level; later execution code can choose how many levels to consume.
+    "order_books_5m": _schema(
+        ("grid_timestamp", pa.int64()),
+        ("market_id", pa.int64()),
+        ("venue", pa.string()),
+        ("asset", pa.string()),
+        ("maturity", pa.date32()),
+        ("snapshot_timestamp", pa.int64()),
+        ("snapshot_age_sec", pa.int64()),
+        ("block_number", pa.int64()),
+        ("status", pa.string()),
+        ("bids", pa.list_(_BOOK_LEVEL_TYPE)),
+        ("asks", pa.list_(_BOOK_LEVEL_TYPE)),
+        ("source_path", pa.string()),
+        ("year", pa.string()),
+        ("month", pa.string()),
+    ),
     "markets": _schema(
         ("market_id", pa.int64()),
         ("token_id", pa.int64()),
@@ -105,6 +131,7 @@ PARTITION_COLUMNS: dict[str, tuple[str, ...]] = {
     "funding_rates": ("venue", "asset", "year", "month"),
     "settlements": ("asset", "year", "month"),
     "ohlcv_5m": ("asset", "year", "month"),
+    "order_books_5m": ("asset", "year", "month"),
     "markets": (),
     "assets": (),
 }
@@ -121,6 +148,7 @@ _TIMESTAMP_FIELD = {
     "funding_rates": "timestamp",
     "settlements": "timestamp",
     "ohlcv_5m": "period_start_timestamp",
+    "order_books_5m": "grid_timestamp",
 }
 
 
@@ -262,6 +290,14 @@ def _duckdb_type(data_type: pa.DataType) -> str:
         return "DATE"
     if pa.types.is_decimal(data_type):
         return f"DECIMAL({data_type.precision}, {data_type.scale})"
+    if pa.types.is_struct(data_type):
+        fields = ", ".join(
+            f"{_quote_identifier(field.name)} {_duckdb_type(field.type)}"
+            for field in data_type
+        )
+        return f"STRUCT({fields})"
+    if pa.types.is_list(data_type):
+        return f"{_duckdb_type(data_type.value_type)}[]"
     raise ValueError(f"unsupported Arrow type for DuckDB view: {data_type}")
 
 

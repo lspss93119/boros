@@ -36,6 +36,45 @@ def market_rows():
     ]
 
 
+def order_book_rows():
+    return [
+        {
+            "grid_timestamp": 1787443500,
+            "market_id": 155,
+            "venue": "HYPERLIQUID",
+            "asset": "HYPE",
+            "maturity": date(2026, 9, 25),
+            "snapshot_timestamp": 1787443320,
+            "snapshot_age_sec": 180,
+            "block_number": 1,
+            "status": "ok",
+            "bids": [
+                {"rate_apr": 0.10, "size_collateral": 1000.0},
+                {"rate_apr": 0.09, "size_collateral": 2000.0},
+            ],
+            "asks": [
+                {"rate_apr": 0.11, "size_collateral": 1000.0},
+                {"rate_apr": 0.12, "size_collateral": 3000.0},
+            ],
+            "source_path": "order-book/155-HYPERLIQUID-HYPEUSDT-25SEP2026/combined_0.0001/2026-08.ndjson.zip",
+        },
+        {
+            "grid_timestamp": 1787443800,
+            "market_id": 155,
+            "venue": "HYPERLIQUID",
+            "asset": "HYPE",
+            "maturity": date(2026, 9, 25),
+            "snapshot_timestamp": 1787442899,
+            "snapshot_age_sec": 901,
+            "block_number": 0,
+            "status": "stale",
+            "bids": None,
+            "asks": None,
+            "source_path": "order-book/155-HYPERLIQUID-HYPEUSDT-25SEP2026/combined_0.0001/2026-08.ndjson.zip",
+        },
+    ]
+
+
 def test_parquet_roundtrip_and_duckdb_view(tmp_path):
     parquet_root = tmp_path / "parquet"
     database_path = tmp_path / "boros.duckdb"
@@ -73,6 +112,7 @@ def test_catalog_exposes_all_views_without_importing_parquet_as_tables(tmp_path)
         "funding_rates",
         "settlements",
         "ohlcv_5m",
+        "order_books_5m",
         "markets",
         "assets",
     }
@@ -86,6 +126,40 @@ def test_catalog_exposes_all_views_without_importing_parquet_as_tables(tmp_path)
         }
         assert expected_views <= actual_views
         assert connection.execute("SELECT count(*) FROM funding_rates").fetchone() == (0,)
+
+
+def test_order_books_nested_levels_round_trip_and_rebuild_is_idempotent(tmp_path):
+    parquet_root = tmp_path / "parquet"
+    database_path = tmp_path / "boros.duckdb"
+    rows = order_book_rows()
+
+    write_dataset(rows, "order_books_5m", parquet_root)
+    build_duckdb_catalog(parquet_root, database_path)
+    write_dataset(rows, "order_books_5m", parquet_root)
+    build_duckdb_catalog(parquet_root, database_path)
+
+    with duckdb.connect(str(database_path), read_only=True) as connection:
+        assert connection.execute(
+            """
+            SELECT
+                count(*),
+                bids[1].rate_apr,
+                bids[2].size_collateral,
+                asks[1].rate_apr,
+                asks[2].size_collateral
+            FROM order_books_5m
+            WHERE status = 'ok'
+            GROUP BY ALL
+            """
+        ).fetchone() == (1, 0.10, 2000.0, 0.11, 3000.0)
+        assert connection.execute(
+            """
+            SELECT status, snapshot_age_sec, bids IS NULL, asks IS NULL
+            FROM order_books_5m
+            WHERE status = 'stale'
+            """
+        ).fetchone() == ("stale", 901, True, True)
+        assert connection.execute("SELECT count(*) FROM order_books_5m").fetchone() == (2,)
 
 
 def test_rebuilding_dataset_and_catalog_does_not_duplicate_rows(tmp_path):

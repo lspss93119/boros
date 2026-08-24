@@ -1,0 +1,3 @@
+{"timestamp":1787443320,"datetime":"2026-08-23T00:02:00Z","blockNumber":1,"long":[{"rate":0.09,"size":2000},{"rate":0.1,"size":1000}],"short":[{"rate":0.12,"size":3000},{"rate":0.11,"size":1000}]}
+{"timestamp":1787443980,"datetime":"2026-08-23T00:13:00Z","blockNumber":2,"long":[{"rate":0.08,"size":1500},{"rate":0.1,"size":500}],"short":[{"rate":0.13,"size":2500},{"rate":0.115,"size":800}]}
+{"timestamp":1787444580,"datetime":"2026-08-23T00:23:00Z","blockNumber":3,"long":[{"rate":0.075,"size":1200},{"rate":0.095,"size":600}],"short":[{"rate":0.14,"size":1800},{"rate":0.12,"size":900}]}
