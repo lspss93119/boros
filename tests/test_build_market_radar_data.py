@@ -40,6 +40,23 @@ class FailingCrossExClient:
         raise self.exception
 
 
+class StaticOnlyVenueCrossExClient(FakeCrossExClient):
+    """Current response with one valid pair and one invalid KRAKEN pair."""
+
+    def fetch(self, notional_usd: int):
+        self.fetch_calls.append(notional_usd)
+        payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        payload["data"]["meta"]["notionalUsd"] = notional_usd
+        payload["data"]["groups"][0]["pairs"][1]["shortLeg"]["crossexVenue"] = "KRAKEN"
+        payload["data"]["groups"][0]["pairs"][1]["shortLeg"]["venue"] = "KRAKEN"
+        payload["data"]["groups"][0]["pairs"][1]["reasons"] = [
+            "current hedge unavailable"
+        ]
+        return normalize_opportunities_response(
+            payload, requested_notional=notional_usd
+        )
+
+
 def _create_fixture_database(path: Path) -> None:
     connection = duckdb.connect(str(path))
     connection.execute(
@@ -111,6 +128,47 @@ def _create_fixture_database(path: Path) -> None:
     connection.close()
 
 
+def _create_live_venue_fixture_database(path: Path) -> None:
+    _create_fixture_database(path)
+    connection = duckdb.connect(str(path))
+    maturity = date(2026, 9, 25)
+    connection.execute(
+        "INSERT INTO markets VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (3, 3, "KRAKEN", "HYPE", maturity, "HYPE-KRAKEN", "HYPE Kraken"),
+    )
+    timestamp = int(datetime(2026, 8, 24, tzinfo=timezone.utc).timestamp())
+    rows = []
+    for index in range(50):
+        for market_id, venue, spread in (
+            (1, "HYPERLIQUID", 0.08),
+            (3, "KRAKEN", 0.09),
+        ):
+            rows.append(
+                (
+                    timestamp + index,
+                    "HYPE",
+                    maturity,
+                    32,
+                    3,
+                    market_id,
+                    venue,
+                    2,
+                    "BYBIT",
+                    10_000,
+                    spread + 0.01,
+                    0.01,
+                    spread,
+                    True,
+                    None,
+                )
+            )
+    connection.executemany(
+        "INSERT INTO executable_opportunities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    connection.close()
+
+
 def _contains_time_series_array(value: object) -> bool:
     if isinstance(value, dict):
         return any(
@@ -161,6 +219,7 @@ def test_builder_opens_duckdb_read_only_and_writes_small_deterministic_finite_pa
     tmp_path, monkeypatch
 ):
     """Catches a writable database open or a non-compact/non-deterministic Radar export."""
+    arbitrage_builder_loaded = "build_arbitrage_site_data" in sys.modules
     import build_market_radar_data as builder
 
     database_path = tmp_path / "boros.duckdb"
@@ -190,7 +249,7 @@ def test_builder_opens_duckdb_read_only_and_writes_small_deterministic_finite_pa
     assert payload["viability"]["proxyModel"]
     assert payload["proxyDiagnostics"]["currentVenues"] == ["BYBIT", "HYPERLIQUID"]
     assert payload["rows"][0]["proxy"]["asOfTimestamp"] == 1_787_500_000
-    assert "build_arbitrage_site_data" not in sys.modules
+    assert ("build_arbitrage_site_data" in sys.modules) is arbitrage_builder_loaded
     assert not _contains_time_series_array(payload)
     assert encoded_size == len(encoded.encode("utf-8"))
     assert encoded_size < 1_048_576
@@ -200,6 +259,46 @@ def test_builder_opens_duckdb_read_only_and_writes_small_deterministic_finite_pa
     assert "NaN" not in encoded
     assert "Infinity" not in encoded
     assert "super-secret-token" not in encoded
+
+
+def test_builder_default_generated_at_is_deterministic_for_fixed_inputs(tmp_path):
+    """Catches wall-clock generatedAt values in the production build seam."""
+    import build_market_radar_data as builder
+
+    database_path = tmp_path / "boros.duckdb"
+    _create_fixture_database(database_path)
+
+    first = builder.build_payload(database_path, FakeCrossExClient())
+    second = builder.build_payload(database_path, FakeCrossExClient())
+
+    assert first == second
+    assert first["generatedAt"] == GENERATED_AT
+
+
+def test_builder_constrains_radar_to_valid_current_cross_ex_venues(tmp_path):
+    """Catches static KRAKEN history entering Radar without a valid current hedge pair."""
+    import build_market_radar_data as builder
+
+    database_path = tmp_path / "boros.duckdb"
+    _create_live_venue_fixture_database(database_path)
+
+    payload = builder.build_payload(
+        database_path,
+        StaticOnlyVenueCrossExClient(),
+        generated_at=GENERATED_AT,
+    )
+    row = next(
+        item
+        for item in payload["rows"]
+        if item["asset"] == "HYPE" and item["notionalUsd"] == 10_000
+    )
+
+    assert payload["proxyDiagnostics"]["currentVenues"] == [
+        "BYBIT",
+        "HYPERLIQUID",
+    ]
+    assert row["normal"]["shortVenue"] == "HYPERLIQUID"
+    assert row["burst"]["shortVenue"] == "HYPERLIQUID"
 
 
 def test_write_payload_rejects_a_payload_at_or_above_one_mib(tmp_path):

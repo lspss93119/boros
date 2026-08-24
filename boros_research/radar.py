@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Collection
 from typing import Any
 
 import duckdb
@@ -219,8 +220,23 @@ def _create_cutoff_relation(
     return rows
 
 
-def _create_eligible_view(connection: duckdb.DuckDBPyConnection, anchor: int) -> None:
-    supported_venues = ", ".join(f"'{venue}'" for venue in sorted(CROSSEX_VENUES))
+def _create_eligible_view(
+    connection: duckdb.DuckDBPyConnection,
+    anchor: int,
+    supported_venues: Collection[str] | None = None,
+) -> None:
+    venue_universe = (
+        CROSSEX_VENUES if supported_venues is None else frozenset(supported_venues)
+    )
+    venue_filter = "FALSE"
+    if venue_universe:
+        supported_venues_sql = ", ".join(
+            "'" + venue.replace("'", "''") + "'" for venue in sorted(venue_universe)
+        )
+        venue_filter = (
+            f"o.short_venue IN ({supported_venues_sql}) "
+            f"AND o.long_venue IN ({supported_venues_sql})"
+        )
     connection.execute(
         f"""
         CREATE OR REPLACE TEMP VIEW radar_eligible AS
@@ -235,8 +251,7 @@ def _create_eligible_view(connection: duckdb.DuckDBPyConnection, anchor: int) ->
           AND o.executable_spread_apr IS NOT NULL
           AND isfinite(o.executable_spread_apr)
           AND o.dte_days >= c.cutoff_days
-          AND o.short_venue IN ({supported_venues})
-          AND o.long_venue IN ({supported_venues})
+          AND {venue_filter}
         """
     )
 
@@ -473,14 +488,24 @@ def build_radar_payload(
     proxies_by_notional: dict[int, dict[str, ProxyEconomics]],
     *,
     generated_at: str | None = None,
+    supported_venues: Collection[str] | None = None,
 ) -> dict[str, Any]:
     """Build the compact Task 3 radar payload without mutating production data."""
     _create_identity_views(connection)
     anchor = _anchor_timestamp(connection)
     payload: dict[str, Any] = {
         "schemaVersion": 1,
-        "generatedAt": generated_at
-        or dt.datetime.now(tz=dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "generatedAt": (
+            generated_at
+            if generated_at is not None
+            else (
+                dt.datetime.fromtimestamp(anchor, tz=dt.timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+                if anchor is not None
+                else "1970-01-01T00:00:00Z"
+            )
+        ),
         "historicalMaxTimestamp": anchor,
         "windowDays": RADAR_WINDOW_DAYS,
         "notionals": list(RADAR_NOTIONALS),
@@ -496,7 +521,7 @@ def build_radar_payload(
 
     references = _reference_spreads(connection, anchor)
     rows = _create_cutoff_relation(connection, references, proxies_by_notional)
-    _create_eligible_view(connection, anchor)
+    _create_eligible_view(connection, anchor, supported_venues)
     _apply_direction_statistics(connection, rows, anchor)
     _apply_venue_winners(connection, rows)
     payload["rows"] = [rows[key] for key in sorted(rows)]

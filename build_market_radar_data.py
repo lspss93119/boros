@@ -123,6 +123,7 @@ def build_payload(
             connection,
             proxies_by_notional,
             generated_at=generated_at,
+            supported_venues=diagnostics["currentVenues"],
         )
     finally:
         connection.close()
