@@ -381,16 +381,8 @@ class AlertStateStore:
         *,
         valid: bool = True,
     ) -> AlertDecision:
-        """Observe and immediately simulate a successful alert delivery.
-
-        Production monitoring uses :meth:`evaluate` and commits only after
-        the sender succeeds.  This compatibility helper is retained for
-        callers that intentionally model delivery in one synchronous step.
-        """
-        decision = self.evaluate(identity, timestamp, percentile_90d, valid=valid)
-        if decision.severity is not None:
-            self.commit_alert_delivered(identity, timestamp, decision.severity)
-        return decision
+        """Observe an input without consuming an alert delivery."""
+        return self.evaluate(identity, timestamp, percentile_90d, valid=valid)
 
     def mark_unknown(self, identity: AlertIdentity, timestamp: int) -> None:
         self._connection.execute("BEGIN IMMEDIATE")

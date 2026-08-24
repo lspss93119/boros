@@ -10,7 +10,10 @@ OTHER = AlertIdentity("HYPE", date(2026, 9, 25), "BYBIT", "HYPERLIQUID", 3)
 
 
 def observe(store, timestamp, percentile, *, valid=True):
-    return store.observe(IDENTITY, timestamp, percentile, valid=valid)
+    decision = store.observe(IDENTITY, timestamp, percentile, valid=valid)
+    if decision.severity is not None:
+        store.commit_alert_delivered(IDENTITY, timestamp, decision.severity)
+    return decision
 
 
 def test_first_p95_and_p99_severity_and_escalation():
@@ -29,6 +32,18 @@ def test_first_p95_and_p99_severity_and_escalation():
     boundary = AlertStateStore(":memory:")
     assert observe(boundary, 1_000, 95.0).severity == "NORMAL"
     assert observe(boundary, 1_060, 94.999).severity is None
+
+
+def test_observe_does_not_disarm_before_delivery_commit():
+    store = AlertStateStore(":memory:")
+
+    decision = store.observe(IDENTITY, 1_000, 96.0)
+
+    assert decision.severity == "NORMAL"
+    assert store.snapshot(IDENTITY).p95_armed is True
+
+    store.commit_alert_delivered(IDENTITY, 1_000, "NORMAL")
+    assert store.snapshot(IDENTITY).p95_armed is False
 
 
 def test_rearm_requires_six_hours_below_and_unknown_does_not_count():
