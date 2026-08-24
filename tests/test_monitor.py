@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
-
+from dataclasses import replace
 from boros_research.alert_state import AlertStateStore
 from boros_research.crossex_client import (
     CrossExCosts,
@@ -11,7 +10,7 @@ from boros_research.crossex_client import (
     CrossExResponse,
 )
 from boros_research.live_benchmark import LiveBenchmarkResult
-from boros_research.monitor import LiveMonitor
+from boros_research.monitor import LiveMonitor, render_delivery_event, render_heartbeat
 
 
 def pair(short="HYPERLIQUID", long="BYBIT", spread=0.047):
@@ -125,6 +124,7 @@ def test_monitor_queries_all_sizes_aggregates_identity_and_dry_run_sends_nothing
     assert result.normal_candidate_count == 1
     assert result.urgent_candidate_count == 0
     assert sent == []
+    assert result.telegram_sent_count == 0
 
 
 def test_missing_size_is_reported_without_reusing_old_cross_ex_data(tmp_path):
@@ -226,6 +226,7 @@ def test_p95_telegram_failure_keeps_state_armed(tmp_path):
     identity = state.identities()[0]
     assert result.messages
     assert state.snapshot(identity).p95_armed is True
+    assert result.delivery_events[0].delivered is False
 
 
 def test_next_successful_poll_delivers_and_disarms_p95(tmp_path):
@@ -234,11 +235,14 @@ def test_next_successful_poll_delivers_and_disarms_p95(tmp_path):
 
     monitor.run_once()
     monitor.telegram_send = sent.append
-    monitor.run_once()
+    result = monitor.run_once()
 
     identity = state.identities()[0]
     assert len(sent) == 1
     assert state.snapshot(identity).p95_armed is False
+    assert result.telegram_sent_count == 1
+    assert result.delivery_events[0].delivered is True
+    assert "SENT" in render_delivery_event(result.delivery_events[0])
 
 
 def test_failed_p99_delivery_keeps_p95_and_p99_armed(tmp_path):
@@ -247,12 +251,14 @@ def test_failed_p99_delivery_keeps_p95_and_p99_armed(tmp_path):
 
     monitor, state = real_state_monitor(tmp_path, VariableBenchmark(99.0), fail)
 
-    monitor.run_once()
+    result = monitor.run_once()
 
     identity = state.identities()[0]
     snapshot = state.snapshot(identity)
     assert snapshot.p95_armed is True
     assert snapshot.p99_armed is True
+    assert result.delivery_events[0].severity == "URGENT"
+    assert result.delivery_events[0].delivered is False
 
 
 def test_successful_p95_then_p99_sends_urgent_escalation(tmp_path):
@@ -273,3 +279,92 @@ def test_successful_p95_then_p99_sends_urgent_escalation(tmp_path):
     assert "歷史前 1%" in sent[1]
     assert snapshot.p95_armed is False
     assert snapshot.p99_armed is False
+
+
+def test_monitor_retains_cross_ex_warnings_for_diagnostics_only(tmp_path):
+    class WarningClient(FakeClient):
+        def fetch(self, notional):
+            raw = super().fetch(notional)
+            return replace(
+                raw,
+                warnings=(f"response warning {notional}",),
+                groups=(replace(raw.groups[0], warnings=(f"group warning {notional}",)),),
+            )
+
+    monitor = LiveMonitor(
+        client=WarningClient(),
+        benchmark=FakeBenchmark(),
+        state=FakeState(),
+        telegram_send=None,
+        now_timestamp=lambda: 1_800_000_000,
+        database_path=tmp_path / "unused.duckdb",
+    )
+
+    result = monitor.run_once(dry_run=True)
+
+    assert len(result.warnings) == 6
+    assert "response warning 10000" in result.warnings
+    assert "group warning 50000" in result.warnings
+
+
+def test_heartbeat_contains_compact_cycle_observability(tmp_path):
+    monitor = LiveMonitor(
+        client=FakeClient(),
+        benchmark=FakeBenchmark(),
+        state=FakeState(),
+        telegram_send=None,
+        now_timestamp=lambda: 1_800_000_000,
+        database_path=tmp_path / "unused.duckdb",
+    )
+    result = monitor.run_once(dry_run=True)
+    result = replace(
+        result,
+        normal_candidate_count=1,
+        urgent_candidate_count=0,
+        warnings=("w1", "w2", "w3", "w4", "w5", "w6", "w7"),
+        benchmark_age_seconds=int(12.7 * 3600),
+    )
+
+    heartbeat = render_heartbeat(result)
+
+    assert "✓ CrossEx" in heartbeat
+    assert "opps 1" in heartbeat
+    assert "benchmarked 1" in heartbeat
+    assert "P95 1" in heartbeat
+    assert "P99 0" in heartbeat
+    assert "sent 0" in heartbeat
+    assert "warnings 7" in heartbeat
+    assert "benchmark 12.7h" in heartbeat
+
+
+def test_run_forever_prints_one_heartbeat_for_each_successful_cycle(
+    tmp_path, monkeypatch, capsys
+):
+    monitor = LiveMonitor(
+        client=FakeClient(),
+        benchmark=FakeBenchmark(),
+        state=FakeState(),
+        telegram_send=None,
+        now_timestamp=lambda: 1_800_000_000,
+        database_path=tmp_path / "unused.duckdb",
+    )
+    result = monitor.run_once(dry_run=True)
+    calls = 0
+
+    def cycle(*, dry_run):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return result
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(monitor, "run_once", cycle)
+    monkeypatch.setattr("boros_research.monitor.time.sleep", lambda _seconds: None)
+
+    try:
+        monitor.run_forever(dry_run=True)
+    except KeyboardInterrupt:
+        pass
+
+    output = capsys.readouterr().out
+    assert output.count("✓ CrossEx") == 1

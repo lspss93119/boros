@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from .alert_state import AlertDecision, AlertIdentity, AlertStateStore
+from .alert_state import AlertIdentity, AlertStateStore
 from .crossex_client import (
     MONITORED_NOTIONALS,
     CrossExClient,
@@ -41,6 +41,16 @@ class LiveSizeRecord:
 
 
 @dataclass(frozen=True)
+class DeliveryEvent:
+    severity: str
+    asset: str
+    short_venue: str
+    long_venue: str
+    percentile_90d: float | None
+    delivered: bool
+
+
+@dataclass(frozen=True)
 class MonitorCycleResult:
     group_counts: dict[int, int]
     unavailable_notionals: tuple[int, ...]
@@ -54,6 +64,8 @@ class MonitorCycleResult:
     sizes_by_opportunity: tuple[dict[int, LiveSizeRecord | None], ...]
     historical_max_timestamp: int | None
     benchmark_age_seconds: int | None
+    telegram_sent_count: int = 0
+    delivery_events: tuple[DeliveryEvent, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -91,6 +103,64 @@ def _valid_economics(pair: CrossExPair) -> bool:
         and pair.est_profit_usd is not None
         and pair.net_fixed_apr_on_capital > 0
     )
+
+
+def _display_venue(value: str) -> str:
+    return {
+        "HYPERLIQUID": "Hyperliquid",
+        "BINANCE": "Binance",
+        "BYBIT": "Bybit",
+        "GATE": "Gate",
+        "OKX": "OKX",
+        "KRAKEN": "Kraken",
+    }.get(value, value)
+
+
+def _clock_text(now: datetime | None = None) -> str:
+    return (now or datetime.now().astimezone()).strftime("%H:%M:%S")
+
+
+def _benchmark_age_text(seconds: int | None) -> str:
+    if seconds is None:
+        return "unknown"
+    if seconds >= 3600:
+        return f"{seconds / 3600:.1f}h"
+    if seconds >= 60:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def render_heartbeat(
+    result: MonitorCycleResult,
+    *,
+    now: datetime | None = None,
+) -> str:
+    return (
+        f"{_clock_text(now)} ✓ CrossEx | "
+        f"opps {result.mapped_opportunity_count} | "
+        f"benchmarked {result.benchmarkable_opportunity_count} | "
+        f"P95 {result.normal_candidate_count} | "
+        f"P99 {result.urgent_candidate_count} | "
+        f"sent {result.telegram_sent_count} | "
+        f"warnings {len(result.warnings)} | "
+        f"benchmark {_benchmark_age_text(result.benchmark_age_seconds)}"
+    )
+
+
+def render_delivery_event(
+    event: DeliveryEvent,
+    *,
+    now: datetime | None = None,
+) -> str:
+    direction = (
+        f"{_display_venue(event.short_venue)} → "
+        f"{_display_venue(event.long_venue)}"
+    )
+    if event.delivered:
+        percentile = "—" if event.percentile_90d is None else f"P{event.percentile_90d:.1f}"
+        icon = "🟠" if event.severity == "NORMAL" else "🔴"
+        return f"{_clock_text(now)} {icon} SENT {event.asset} {direction} | {percentile}"
+    return f"{_clock_text(now)} ⚠ TELEGRAM FAILED {event.asset} {direction}"
 
 
 class LiveMonitor:
@@ -288,6 +358,8 @@ class LiveMonitor:
             )
 
         messages: list[str] = []
+        delivery_events: list[DeliveryEvent] = []
+        telegram_sent_count = 0
         normal_count = 0
         urgent_count = 0
         active_state_keys: set[str] = set()
@@ -344,6 +416,11 @@ class LiveMonitor:
                         for notional, item in sorted(sizes.items())
                     ),
                     live_detected_minutes=decision.live_detected_minutes,
+                    p95_live_detected_minutes=getattr(
+                        decision,
+                        "p95_live_detected_minutes",
+                        decision.live_detected_minutes,
+                    ),
                     warnings=tuple(dict.fromkeys(warnings)),
                 )
                 message = format_opportunity_message(alert)
@@ -368,7 +445,28 @@ class LiveMonitor:
                         # Keep the alert armed so a later cycle can make one
                         # fresh delivery attempt.  Never retry in this cycle.
                         skipped.append("telegram_send_failed")
+                        delivery_events.append(
+                            DeliveryEvent(
+                                severity=decision.severity,
+                                asset=primary.identity.asset,
+                                short_venue=primary.identity.short_venue,
+                                long_venue=primary.identity.long_venue,
+                                percentile_90d=primary_benchmark.percentile_90d,
+                                delivered=False,
+                            )
+                        )
                     else:
+                        telegram_sent_count += 1
+                        delivery_events.append(
+                            DeliveryEvent(
+                                severity=decision.severity,
+                                asset=primary.identity.asset,
+                                short_venue=primary.identity.short_venue,
+                                long_venue=primary.identity.long_venue,
+                                percentile_90d=primary_benchmark.percentile_90d,
+                                delivered=True,
+                            )
+                        )
                         self.state.commit_alert_delivered(
                             primary.identity, delivery_timestamp, decision.severity
                         )
@@ -387,13 +485,19 @@ class LiveMonitor:
             sizes_by_opportunity=tuple(size_records[key] for key in ordered_identity_keys),
             historical_max_timestamp=historical_max,
             benchmark_age_seconds=benchmark_age,
+            telegram_sent_count=telegram_sent_count,
+            delivery_events=tuple(delivery_events),
         )
 
     def run_forever(self, *, dry_run: bool = False) -> None:
         while True:
             started = time.monotonic()
             try:
-                self.run_once(dry_run=dry_run)
+                result = self.run_once(dry_run=dry_run)
+                now = datetime.now().astimezone()
+                print(render_heartbeat(result, now=now), flush=True)
+                for event in result.delivery_events:
+                    print(render_delivery_event(event, now=now), flush=True)
             except Exception as exc:
                 print(f"CrossEx monitor cycle failed: {type(exc).__name__}")
             elapsed = time.monotonic() - started

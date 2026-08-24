@@ -69,7 +69,11 @@ def test_chinese_message_contains_precise_economic_labels_and_no_nulls():
                 SizeMessage(50_000, None, None),
             ),
             live_detected_minutes=20,
-            warnings=("fee tier VIP0 assumption",),
+            warnings=(
+                "fee tier VIP0 assumption",
+                "Lighter is not supported",
+                "KuCoin has no hedge market",
+            ),
         )
     )
 
@@ -88,13 +92,76 @@ def test_chinese_message_contains_precise_economic_labels_and_no_nulls():
     assert "樣本：4,821 筆" in message
     assert "DTE 22–45 天" in message
     assert "總成本" in message
-    assert "本機已連續偵測：20 分鐘" in message
-    assert "VIP0" in message
+    assert "前 5% 已持續：20 分鐘" in message
+    assert "VIP0" not in message
+    assert "Lighter is not supported" not in message
+    assert "KuCoin has no hedge market" not in message
+    assert "⚠️ CrossEx：" not in message
     assert "None" not in message
     assert "null" not in message
     assert "0.0642" not in message
     assert "6.42%" in message
     assert "不可完整執行" in message or "CrossEx 資料不足" in message
+
+
+def test_first_normal_alert_uses_entry_status_instead_of_zero_minutes():
+    message = format_opportunity_message(
+        AlertMessage(
+            severity="NORMAL",
+            asset="HYPE",
+            short_venue="HYPERLIQUID",
+            long_venue="BYBIT",
+            maturity=date(2026, 9, 25),
+            remaining_days=32,
+            primary=SizeMessage(10_000, pair(10_000), benchmark()),
+            sizes=(SizeMessage(10_000, pair(10_000), benchmark()),),
+            live_detected_minutes=0,
+            p95_live_detected_minutes=0,
+        )
+    )
+
+    assert "本機狀態：剛進入歷史前 5%" in message
+    assert "本機已連續偵測：0 分鐘" not in message
+
+
+def test_p99_escalation_shows_existing_p95_duration():
+    message = format_opportunity_message(
+        AlertMessage(
+            severity="URGENT",
+            asset="HYPE",
+            short_venue="HYPERLIQUID",
+            long_venue="BYBIT",
+            maturity=date(2026, 9, 25),
+            remaining_days=32,
+            primary=SizeMessage(10_000, pair(10_000), benchmark(99.2)),
+            sizes=(SizeMessage(10_000, pair(10_000), benchmark(99.2)),),
+            live_detected_minutes=0,
+            p95_live_detected_minutes=163,
+        )
+    )
+
+    assert "前 5% 已持續：2 小時 43 分" in message
+    assert "本機狀態：剛進入歷史前 1%" in message
+
+
+def test_first_p99_does_not_show_zero_p95_duration():
+    message = format_opportunity_message(
+        AlertMessage(
+            severity="URGENT",
+            asset="HYPE",
+            short_venue="HYPERLIQUID",
+            long_venue="BYBIT",
+            maturity=date(2026, 9, 25),
+            remaining_days=32,
+            primary=SizeMessage(10_000, pair(10_000), benchmark(99.2)),
+            sizes=(SizeMessage(10_000, pair(10_000), benchmark(99.2)),),
+            live_detected_minutes=0,
+            p95_live_detected_minutes=0,
+        )
+    )
+
+    assert "本機狀態：剛進入歷史前 1%" in message
+    assert "前 5% 已持續：0 分鐘" not in message
 
 
 def test_telegram_client_posts_once_without_leaking_token():

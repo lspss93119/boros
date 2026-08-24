@@ -33,6 +33,7 @@ class AlertMessage:
     sizes: tuple[SizeMessage, ...]
     live_detected_minutes: int
     warnings: tuple[str, ...] = ()
+    p95_live_detected_minutes: int | None = None
 
 
 def _apr(value: float | None) -> str:
@@ -79,6 +80,14 @@ def _size_line(size: SizeMessage) -> str:
     percentile = "—" if size.benchmark is None else f"90D {_percentile(size.benchmark.percentile_90d)}"
     net_apr = _apr(size.pair.net_fixed_apr_on_capital)
     return f"{label}｜利差 {_apr(size.pair.exec_spread_apr)}｜{percentile}｜淨APR {net_apr}"
+
+
+def _duration_text(minutes: int) -> str:
+    minutes = max(0, minutes)
+    if minutes < 60:
+        return f"{minutes} 分鐘"
+    hours, remainder = divmod(minutes, 60)
+    return f"{hours} 小時" if remainder == 0 else f"{hours} 小時 {remainder} 分"
 
 
 def format_opportunity_message(alert: AlertMessage) -> str:
@@ -139,10 +148,20 @@ def format_opportunity_message(alert: AlertMessage) -> str:
                 f"Perp 滑價：${_money(perp_slippage)}",
             ]
         )
-    lines.extend(["", f"本機已連續偵測：{max(0, alert.live_detected_minutes)} 分鐘"])
-    for warning in alert.warnings:
-        if warning.strip():
-            lines.append(f"⚠️ CrossEx：{warning}")
+    p95_minutes = (
+        alert.live_detected_minutes
+        if alert.p95_live_detected_minutes is None
+        else alert.p95_live_detected_minutes
+    )
+    if p95_minutes > 0:
+        lines.extend(["", f"前 5% 已持續：{_duration_text(p95_minutes)}"])
+        if alert.severity == "URGENT":
+            lines.append("本機狀態：剛進入歷史前 1%")
+        else:
+            lines.append("本機狀態：已在歷史前 5%")
+    else:
+        status = "5%" if alert.severity == "NORMAL" else "1%"
+        lines.extend(["", f"本機狀態：剛進入歷史前 {status}"])
     return "\n".join(lines)
 
 

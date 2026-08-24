@@ -63,6 +63,7 @@ class AlertDecision:
     live_detected_minutes: int
     p95_above: bool
     p99_above: bool
+    p95_live_detected_minutes: int = 0
 
 
 def _default_snapshot(identity: AlertIdentity) -> AlertSnapshot:
@@ -324,7 +325,18 @@ class AlertStateStore:
 
         run_start = p99_run_start if p99_above else p95_run_start
         duration = 0 if run_start is None else max(0, (timestamp - run_start) // 60)
-        return AlertDecision(severity, duration, p95_above, p99_above)
+        p95_duration = (
+            0
+            if not p95_above or p95_run_start is None
+            else max(0, (timestamp - p95_run_start) // 60)
+        )
+        return AlertDecision(
+            severity,
+            duration,
+            p95_above,
+            p99_above,
+            p95_live_detected_minutes=p95_duration,
+        )
 
     def commit_alert_delivered(
         self,

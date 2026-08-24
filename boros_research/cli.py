@@ -32,7 +32,7 @@ from .download import (
 from .crossex_client import CrossExClient, MONITORED_NOTIONALS
 from .live_benchmark import HistoricalBenchmarkLookup
 from .manifest import select_archive_files
-from .monitor import LiveMonitor, render_cycle_summary
+from .monitor import LiveMonitor, render_cycle_summary, render_delivery_event
 from .telegram import TelegramClient, telegram_test_message
 from .validation import render_report
 
@@ -375,6 +375,8 @@ def _run_monitor_command(args: argparse.Namespace) -> int:
             print(render_cycle_summary(result))
             for message in result.messages:
                 print("\n" + message)
+            for event in result.delivery_events:
+                print(render_delivery_event(event))
             return 0
         monitor.run_forever(dry_run=args.dry_run)
         return 0

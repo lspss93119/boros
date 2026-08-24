@@ -180,3 +180,18 @@ def test_failed_poll_breaks_live_persistence():
     assert decision.live_detected_minutes == 0
     assert snapshot.p95_run_start == 1_180
     assert snapshot.p95_observation_count == 1
+
+
+def test_p99_escalation_exposes_durable_p95_run_duration():
+    store = AlertStateStore(":memory:", poll_interval_seconds=60)
+
+    first = store.observe(IDENTITY, 1_000, 96.0)
+    store.commit_alert_delivered(IDENTITY, 1_000, first.severity)
+    final_timestamp = 1_000 + 163 * 60
+    for timestamp in range(1_060, final_timestamp, 60):
+        store.observe(IDENTITY, timestamp, 96.0)
+
+    decision = store.observe(IDENTITY, final_timestamp, 99.0)
+
+    assert decision.severity == "URGENT"
+    assert decision.p95_live_detected_minutes == 163
