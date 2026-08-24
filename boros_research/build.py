@@ -334,9 +334,30 @@ def _validate_book_market(
             f"{source_path}: metadata missing market ID {market_slug.market_id}"
         )
     mismatches = []
-    for name in ("market_id", "venue", "asset", "maturity"):
+    for name in ("market_id", "venue", "maturity"):
         if getattr(market_slug, name) != getattr(market, name):
             mismatches.append(name)
+
+    asset_matches = market_slug.asset == market.asset
+    if not asset_matches:
+        # Some official archive symbols use a venue shorthand while the
+        # metadata's underlyingSymbol is canonical (for example xyzCL/CLOIL).
+        # The metadata's complete symbol is the unambiguous identity bridge;
+        # accept the asset mismatch only when every other symbol component is
+        # exactly the same.
+        try:
+            metadata_slug = parse_market_slug(
+                f"{market.market_id}-{market.symbol}"
+            )
+        except ValueError:
+            metadata_slug = None
+        asset_matches = metadata_slug is not None and (
+            metadata_slug.venue == market_slug.venue
+            and metadata_slug.symbol == market_slug.symbol
+            and metadata_slug.maturity == market_slug.maturity
+        )
+    if not asset_matches:
+        mismatches.append("asset")
     if mismatches:
         raise ValueError(
             f"{source_path}: slug/metadata mismatch for market {market_slug.market_id}: "

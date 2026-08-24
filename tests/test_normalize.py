@@ -14,9 +14,19 @@ def test_parse_market_slug():
     assert market.maturity == date(2026, 9, 25)
 
 
+def test_parse_market_slug_accepts_single_digit_day():
+    market = parse_market_slug("176-HYPERLIQUID-xyzSKHX-5AUG2026")
+
+    assert market.market_id == 176
+    assert market.venue == "HYPERLIQUID"
+    assert market.asset == "SKHX"
+    assert market.maturity == date(2026, 8, 5)
+
+
 def test_aliases_are_canonical():
     assert normalize_venue("Hyperliquid") == "HYPERLIQUID"
     assert asset_from_symbol("xyzGOLD") == "XAU"
+    assert asset_from_symbol("XYZ100") == "XYZ100"
     assert asset_from_symbol("ETHUSDT") == "ETH"
     assert asset_from_symbol("BTCUSDC.E") == "BTC"
 

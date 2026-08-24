@@ -7,8 +7,10 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from boros_research.build import BuildPaths, run_build
+from boros_research.build import BuildPaths, _validate_book_market, run_build
 from boros_research.cli import main as cli_main
+from boros_research.market_metadata import MarketInfo
+from boros_research.normalize import parse_market_slug
 
 
 BASE_TIMESTAMP = 1_787_529_600
@@ -256,6 +258,30 @@ def run_fixture_build(tmp_path, payloads, manifest, counters):
 def query_one(database_path, sql):
     with duckdb.connect(str(database_path), read_only=True) as connection:
         return connection.execute(sql).fetchone()
+
+
+@pytest.mark.parametrize(
+    ("slug", "asset"),
+    [
+        ("73-HYPERLIQUID-xyzCL-27MAR2026", "CLOIL"),
+        ("77-HYPERLIQUID-xyzSILVER-27MAR2026", "XAG"),
+        ("105-BINANCE-BZUSDT-21MAY2026", "BRENTOIL"),
+        ("176-HYPERLIQUID-xyzSKHX-5AUG2026", "SKHYNIX"),
+    ],
+)
+def test_official_symbol_aliases_match_canonical_market_assets(slug, asset):
+    parsed = parse_market_slug(slug)
+    market = MarketInfo(
+        market_id=parsed.market_id,
+        token_id=3,
+        venue=parsed.venue,
+        asset=asset,
+        maturity=parsed.maturity,
+        symbol=f"{parsed.venue}-{parsed.symbol}-{slug.rsplit('-', 1)[1]}",
+        name=f"{asset} market",
+    )
+
+    assert _validate_book_market(slug, parsed, {market.market_id: market}, set()) == market
 
 
 def test_run_build_reconstructs_spreads_and_quality_report_offline(tmp_path):

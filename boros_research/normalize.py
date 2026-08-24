@@ -30,7 +30,7 @@ _MARKET_SLUG_RE = re.compile(
     r"^(?P<market_id>[1-9][0-9]*)-"
     r"(?P<venue>[^-]+)-"
     r"(?P<symbol>.+)-"
-    r"(?P<maturity>[0-9]{2}[A-Za-z]{3}[0-9]{4})$"
+    r"(?P<maturity>[0-9]{1,2}[A-Za-z]{3}[0-9]{4})$"
 )
 _SYMBOL_QUOTES = ("USDT0", "USDCE", "USDE", "USDT", "USDC", "USD")
 _XYZ_ASSET_ALIASES = {"GOLD": "XAU"}
@@ -60,6 +60,10 @@ def asset_from_symbol(symbol: str) -> str:
     if not normalized:
         raise ValueError("symbol must contain alphanumeric characters")
 
+    # XYZ100 is an official canonical underlying symbol.  Other ``xyz...``
+    # spellings in market symbols use ``xyz`` as a venue-specific wrapper.
+    if normalized == "XYZ100":
+        return normalized
     if normalized.startswith("XYZ") and len(normalized) > 3:
         asset = normalized[3:]
         return _XYZ_ASSET_ALIASES.get(asset, asset)
