@@ -366,13 +366,11 @@ def _validate_book_market(
     return market
 
 
-def _book_rows(
+def _book_entries_by_market(
     selected: Sequence[Mapping[str, Any]],
-    raw_root: Path,
     markets: Mapping[int, MarketInfo],
     missing_ids: set[int],
-    physical_targets: Mapping[str, Path] | None = None,
-) -> list[dict[str, Any]]:
+)-> dict[int, tuple[tuple[str, Mapping[str, Any]], ...]]:
     book_entries = [
         entry
         for entry in selected
@@ -387,97 +385,147 @@ def _book_rows(
         market_slug = parse_market_slug(parts[1])
         market = _validate_book_market(source_path, market_slug, markets, missing_ids)
         entries_by_market[market.market_id].append((source_path, entry))
+    return {
+        market_id: tuple(entries)
+        for market_id, entries in sorted(entries_by_market.items())
+    }
 
-    rows: list[dict[str, Any]] = []
-    for market_id in sorted(entries_by_market):
-        market = markets[market_id]
-        snapshots: dict[
-            tuple[int, int | None], tuple[OrderBookSnapshot, str]
-        ] = {}
-        for source_path, entry in entries_by_market[market_id]:
-            for raw in iter_ndjson_zip(
-                _target_for_entry(raw_root, entry, physical_targets)
-            ):
-                snapshot = parse_combined_snapshot(raw)
-                identity = (snapshot.timestamp, snapshot.block_number)
-                previous = snapshots.get(identity)
-                if previous is not None:
-                    if previous[0] != snapshot:
-                        raise ValueError(
-                            f"{source_path}: conflicting duplicate order-book snapshot "
-                            f"for market {market.market_id} at {identity}"
-                        )
-                    continue
-                snapshots[identity] = (snapshot, source_path)
 
-        values = sorted(
-            snapshots.values(),
-            key=lambda item: (
-                item[0].timestamp,
-                -1 if item[0].block_number is None else item[0].block_number,
-                item[1],
-            ),
-        )
-        if not values:
-            continue
-        first_timestamp = values[0][0].timestamp
-        last_timestamp = values[-1][0].timestamp
-        grid_start = (
-            (first_timestamp + SAMPLE_INTERVAL_SEC - 1) // SAMPLE_INTERVAL_SEC
-        ) * SAMPLE_INTERVAL_SEC
-        grid_end = (
-            (last_timestamp + SAMPLE_INTERVAL_SEC - 1) // SAMPLE_INTERVAL_SEC
-        ) * SAMPLE_INTERVAL_SEC
-        if grid_start > grid_end:
-            continue
-        aligned = align_snapshots_to_grid(
-            [item[0] for item in values],
-            grid_start,
-            grid_end,
-        )
-        provenance = {
-            (item[0].timestamp, item[0].block_number): item[1] for item in values
-        }
-        for observation in aligned:
-            source = None
-            if observation.snapshot_timestamp is not None:
-                source = provenance.get(
-                    (observation.snapshot_timestamp, observation.block_number)
-                )
-            rows.append(
-                {
-                    "grid_timestamp": observation.grid_timestamp,
-                    "market_id": market.market_id,
-                    "venue": market.venue,
-                    "asset": market.asset,
-                    "maturity": market.maturity,
-                    "snapshot_timestamp": observation.snapshot_timestamp,
-                    "snapshot_age_sec": observation.snapshot_age_sec,
-                    "block_number": observation.block_number,
-                    "status": observation.status,
-                    "bids": None
-                    if observation.bids is None
-                    else [
-                        {
-                            "rate_apr": level.rate_apr,
-                            "size_collateral": level.size_collateral,
-                        }
-                        for level in observation.bids
-                    ],
-                    "asks": None
-                    if observation.asks is None
-                    else [
-                        {
-                            "rate_apr": level.rate_apr,
-                            "size_collateral": level.size_collateral,
-                        }
-                        for level in observation.asks
-                    ],
-                    "source_path": source,
-                }
+def _iter_market_book_rows(
+    market: MarketInfo,
+    entries: Sequence[tuple[str, Mapping[str, Any]]],
+    raw_root: Path,
+    physical_targets: Mapping[str, Path] | None = None,
+):
+    snapshots: dict[
+        tuple[int, int | None], tuple[OrderBookSnapshot, str]
+    ] = {}
+    for source_path, entry in entries:
+        for raw in iter_ndjson_zip(
+            _target_for_entry(raw_root, entry, physical_targets)
+        ):
+            snapshot = parse_combined_snapshot(raw)
+            identity = (snapshot.timestamp, snapshot.block_number)
+            previous = snapshots.get(identity)
+            if previous is not None:
+                if previous[0] != snapshot:
+                    raise ValueError(
+                        f"{source_path}: conflicting duplicate order-book snapshot "
+                        f"for market {market.market_id} at {identity}"
+                    )
+                continue
+            snapshots[identity] = (snapshot, source_path)
+
+    values = sorted(
+        snapshots.values(),
+        key=lambda item: (
+            item[0].timestamp,
+            -1 if item[0].block_number is None else item[0].block_number,
+            item[1],
+        ),
+    )
+    if not values:
+        return
+    first_timestamp = values[0][0].timestamp
+    last_timestamp = values[-1][0].timestamp
+    grid_start = (
+        (first_timestamp + SAMPLE_INTERVAL_SEC - 1) // SAMPLE_INTERVAL_SEC
+    ) * SAMPLE_INTERVAL_SEC
+    grid_end = (
+        (last_timestamp + SAMPLE_INTERVAL_SEC - 1) // SAMPLE_INTERVAL_SEC
+    ) * SAMPLE_INTERVAL_SEC
+    if grid_start > grid_end:
+        return
+    aligned = align_snapshots_to_grid(
+        [item[0] for item in values],
+        grid_start,
+        grid_end,
+    )
+    provenance = {
+        (item[0].timestamp, item[0].block_number): item[1] for item in values
+    }
+    for observation in aligned:
+        source = None
+        if observation.snapshot_timestamp is not None:
+            source = provenance.get(
+                (observation.snapshot_timestamp, observation.block_number)
             )
+        yield {
+            "grid_timestamp": observation.grid_timestamp,
+            "market_id": market.market_id,
+            "venue": market.venue,
+            "asset": market.asset,
+            "maturity": market.maturity,
+            "snapshot_timestamp": observation.snapshot_timestamp,
+            "snapshot_age_sec": observation.snapshot_age_sec,
+            "block_number": observation.block_number,
+            "status": observation.status,
+            "bids": None
+            if observation.bids is None
+            else [
+                {
+                    "rate_apr": level.rate_apr,
+                    "size_collateral": level.size_collateral,
+                }
+                for level in observation.bids
+            ],
+            "asks": None
+            if observation.asks is None
+            else [
+                {
+                    "rate_apr": level.rate_apr,
+                    "size_collateral": level.size_collateral,
+                }
+                for level in observation.asks
+            ],
+            "source_path": source,
+        }
 
-    return _sort_rows(rows, ("grid_timestamp", "market_id", "source_path"))
+
+def _iter_book_rows_from_entries(
+    entries_by_market: Mapping[
+        int, Sequence[tuple[str, Mapping[str, Any]]]
+    ],
+    markets: Mapping[int, MarketInfo],
+    raw_root: Path,
+    physical_targets: Mapping[str, Path] | None = None,
+):
+    for market_id in sorted(entries_by_market):
+        yield from _iter_market_book_rows(
+            markets[market_id],
+            entries_by_market[market_id],
+            raw_root,
+            physical_targets,
+        )
+
+
+def _iter_book_rows(
+    selected: Sequence[Mapping[str, Any]],
+    raw_root: Path,
+    markets: Mapping[int, MarketInfo],
+    missing_ids: set[int],
+    physical_targets: Mapping[str, Path] | None = None,
+):
+    entries_by_market = _book_entries_by_market(selected, markets, missing_ids)
+    yield from _iter_book_rows_from_entries(
+        entries_by_market,
+        markets,
+        raw_root,
+        physical_targets,
+    )
+
+
+def _book_rows(
+    selected: Sequence[Mapping[str, Any]],
+    raw_root: Path,
+    markets: Mapping[int, MarketInfo],
+    missing_ids: set[int],
+    physical_targets: Mapping[str, Path] | None = None,
+) -> list[dict[str, Any]]:
+    return _sort_rows(
+        _iter_book_rows(selected, raw_root, markets, missing_ids, physical_targets),
+        ("grid_timestamp", "market_id", "source_path"),
+    )
 
 
 def _materialize_prices(
@@ -495,18 +543,41 @@ def _materialize_prices(
         timestamps = ranges.setdefault(market.token_id, [])
         timestamps.append(int(row["grid_timestamp"]))
 
+    return _materialize_prices_for_ranges(
+        {
+            token_id: (min(timestamps), max(timestamps))
+            for token_id, timestamps in ranges.items()
+        },
+        markets,
+        assets,
+        raw_root=raw_root,
+        exporter=exporter,
+        request_delay_sec=request_delay_sec,
+    )
+
+
+def _materialize_prices_for_ranges(
+    ranges: Mapping[int, tuple[int, int]],
+    markets: Mapping[int, MarketInfo],
+    assets: Mapping[int, CollateralAsset],
+    *,
+    raw_root: Path,
+    exporter: IndicatorExporter | None,
+    request_delay_sec: float,
+) -> list[AssetPrice]:
+
     prices: list[AssetPrice] = []
     for token_id in sorted(ranges):
         asset = assets.get(token_id)
         if asset is None:
             raise ValueError(f"metadata missing collateral token ID {token_id}")
-        timestamps = ranges[token_id]
+        start_timestamp, end_timestamp = ranges[token_id]
         prices.extend(
             materialize_asset_prices(
                 {token_id: asset},
                 markets,
-                min(timestamps),
-                max(timestamps),
+                start_timestamp,
+                end_timestamp,
                 raw_root=raw_root,
                 exporter=exporter,
                 request_delay_sec=request_delay_sec,
@@ -734,85 +805,205 @@ def run_build(
             paths.raw_boros_dir,
             state.physical_targets,
         )
-        book_rows = _book_rows(
+        book_entries_by_market = _book_entries_by_market(
             state.selected,
-            paths.raw_boros_dir,
             markets,
             state.metadata_missing_market_ids,
-            state.physical_targets,
         )
-        if book_rows:
-            state.coverage_start = min(int(row["grid_timestamp"]) for row in book_rows)
-            state.coverage_end = max(int(row["grid_timestamp"]) for row in book_rows)
-        state.stale_observations = sum(row["status"] == "stale" for row in book_rows)
-        state.missing_observations = sum(row["status"] == "missing" for row in book_rows)
+        paths.parquet_dir.parent.mkdir(parents=True, exist_ok=True)
+        stage_root = Path(
+            tempfile.mkdtemp(prefix=".parquet-build-", dir=paths.parquet_dir.parent)
+        )
 
-        prices = _materialize_prices(
-            book_rows,
+        for dataset in ("market_data", "funding_rates", "settlements", "ohlcv_5m"):
+            write_dataset(lightweight[dataset], dataset, stage_root)
+            state.dataset_row_counts[dataset] = len(lightweight[dataset])
+
+        market_rows = normalize_markets(markets)
+        asset_rows = normalize_asset_rows(assets)
+        write_dataset(market_rows, "markets", stage_root)
+        write_dataset(asset_rows, "assets", stage_root)
+        state.dataset_row_counts["markets"] = len(market_rows)
+        state.dataset_row_counts["assets"] = len(asset_rows)
+
+        book_ranges: dict[int, list[int]] = {}
+        book_market_ids = set(book_entries_by_market)
+        book_row_count = 0
+
+        def iter_book_rows_for_storage():
+            nonlocal book_row_count
+            for row in _iter_book_rows_from_entries(
+                book_entries_by_market,
+                markets,
+                paths.raw_boros_dir,
+                state.physical_targets,
+            ):
+                timestamp = int(row["grid_timestamp"])
+                market = markets[int(row["market_id"])]
+                bounds = book_ranges.setdefault(
+                    market.token_id, [timestamp, timestamp]
+                )
+                bounds[0] = min(bounds[0], timestamp)
+                bounds[1] = max(bounds[1], timestamp)
+                state.coverage_start = (
+                    timestamp
+                    if state.coverage_start is None
+                    else min(state.coverage_start, timestamp)
+                )
+                state.coverage_end = (
+                    timestamp
+                    if state.coverage_end is None
+                    else max(state.coverage_end, timestamp)
+                )
+                if row["status"] == "stale":
+                    state.stale_observations += 1
+                elif row["status"] == "missing":
+                    state.missing_observations += 1
+                book_row_count += 1
+                yield row
+
+        write_dataset(iter_book_rows_for_storage(), "order_books_5m", stage_root)
+        state.dataset_row_counts["order_books_5m"] = book_row_count
+
+        prices = _materialize_prices_for_ranges(
+            {
+                token_id: (bounds[0], bounds[1])
+                for token_id, bounds in book_ranges.items()
+            },
             markets,
             assets,
             raw_root=paths.raw_indicators_dir,
             exporter=indicator_exporter,
             request_delay_sec=indicator_request_delay_sec,
         )
-        observations = _build_observations(book_rows, markets, assets, prices)
-        state.unpriceable_observations = sum(
-            observation.price_status != "ok"
-            for values in observations.values()
-            for observation in values
-        )
-        opportunity_rows = build_executable_opportunities(markets, observations)
-        state.opportunity_row_count = len(opportunity_rows)
-        state.fully_executable_rows = sum(
-            bool(row["fully_executable"]) for row in opportunity_rows
-        )
-        state.invalid_opportunity_rows = state.opportunity_row_count - state.fully_executable_rows
+        price_rows = [
+            {
+                "asset": row.asset,
+                "timestamp": row.timestamp,
+                "price_usd": row.price_usd,
+                "source_market_id": row.source_market_id,
+                "source_path": row.source_path,
+            }
+            for row in prices
+        ]
+        write_dataset(price_rows, "asset_prices", stage_root)
+        state.dataset_row_counts["asset_prices"] = len(price_rows)
+
         groups = build_market_groups(markets)
         state.market_group_count = sum(
-            len({market.venue for market in members}) >= 2 for members in groups.values()
+            len({market.venue for market in members}) >= 2
+            for members in groups.values()
         )
-        state.depth_sufficient_rate_by_notional = _depth_metrics(
-            opportunity_rows,
-            NOTIONALS_USD,
-        )
+        processed_market_ids: set[int] = set()
+        depth_denominator = {float(notional): 0 for notional in NOTIONALS_USD}
+        depth_numerator = {float(notional): 0 for notional in NOTIONALS_USD}
 
-        dataset_rows: dict[str, list[Mapping[str, Any]]] = {
-            **lightweight,
-            "order_books_5m": book_rows,
-            "asset_prices": [
-                {
-                    "asset": row.asset,
-                    "timestamp": row.timestamp,
-                    "price_usd": row.price_usd,
-                    "source_market_id": row.source_market_id,
-                    "source_path": row.source_path,
+        def record_opportunity(row: Mapping[str, Any]) -> None:
+            notional = float(row["notional_usd"])
+            reasons = set(
+                filter(None, str(row.get("invalid_reason") or "").split(";"))
+            )
+            if not any(
+                reason.startswith(
+                    ("short_book_", "long_book_", "short_price_", "long_price_")
+                )
+                or reason in {
+                    "short_execution_missing",
+                    "long_execution_missing",
+                    "expired",
                 }
-                for row in prices
-            ],
-            "markets": normalize_markets(markets),
-            "assets": normalize_asset_rows(assets),
-            "executable_opportunities": list(opportunity_rows),
-        }
-        state.dataset_row_counts = {
-            name: len(rows) for name, rows in sorted(dataset_rows.items())
-        }
+                for reason in reasons
+            ):
+                depth_denominator[notional] += 1
+                if row["fully_executable"]:
+                    depth_numerator[notional] += 1
+            state.opportunity_row_count += 1
+            if row["fully_executable"]:
+                state.fully_executable_rows += 1
+            else:
+                state.invalid_opportunity_rows += 1
 
-        paths.parquet_dir.parent.mkdir(parents=True, exist_ok=True)
-        stage_root = Path(
-            tempfile.mkdtemp(prefix=".parquet-build-", dir=paths.parquet_dir.parent)
-        )
-        for dataset in (
-            "market_data",
-            "funding_rates",
-            "settlements",
-            "ohlcv_5m",
-            "order_books_5m",
-            "asset_prices",
-            "markets",
-            "assets",
+        def iter_opportunity_rows():
+            for members in groups.values():
+                selected_members = [
+                    market
+                    for market in members
+                    if market.market_id in book_market_ids
+                ]
+                if not selected_members:
+                    continue
+                observations: dict[int, tuple[MarketExecutionObservation, ...]] = {}
+                for market in members:
+                    market_entries = book_entries_by_market.get(market.market_id)
+                    if not market_entries:
+                        continue
+                    market_rows = list(
+                        _iter_market_book_rows(
+                            market,
+                            market_entries,
+                            paths.raw_boros_dir,
+                            state.physical_targets,
+                        )
+                    )
+                    market_observations = _build_observations(
+                        market_rows,
+                        markets,
+                        assets,
+                        prices,
+                    )
+                    for values in market_observations.values():
+                        state.unpriceable_observations += sum(
+                            observation.price_status != "ok" for observation in values
+                        )
+                    observations.update(market_observations)
+                    processed_market_ids.add(market.market_id)
+                if len(members) < 2:
+                    continue
+                for row in build_executable_opportunities(
+                    members,
+                    observations,
+                    NOTIONALS_USD,
+                ):
+                    record_opportunity(row)
+                    yield row
+
+            for market_id in sorted(book_market_ids - processed_market_ids):
+                market = markets[market_id]
+                market_rows = list(
+                    _iter_market_book_rows(
+                        market,
+                        book_entries_by_market[market_id],
+                        paths.raw_boros_dir,
+                        state.physical_targets,
+                    )
+                )
+                market_observations = _build_observations(
+                    market_rows,
+                    markets,
+                    assets,
+                    prices,
+                )
+                for values in market_observations.values():
+                    state.unpriceable_observations += sum(
+                        observation.price_status != "ok" for observation in values
+                    )
+
+        write_dataset(
+            iter_opportunity_rows(),
             "executable_opportunities",
-        ):
-            write_dataset(dataset_rows[dataset], dataset, stage_root)
+            stage_root,
+        )
+        state.dataset_row_counts["executable_opportunities"] = (
+            state.opportunity_row_count
+        )
+        state.depth_sufficient_rate_by_notional = {
+            str(int(notional) if notional.is_integer() else notional): (
+                None
+                if depth_denominator[notional] == 0
+                else depth_numerator[notional] / depth_denominator[notional]
+            )
+            for notional in map(float, NOTIONALS_USD)
+        }
 
         _promote_derived_data(stage_root, paths.parquet_dir, paths.duckdb_path)
         stage_root = None
