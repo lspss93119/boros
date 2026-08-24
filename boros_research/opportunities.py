@@ -38,6 +38,8 @@ class MarketExecutionObservation:
     price_age_sec: int | None
     collateral_price_usd: float | None
     executions: tuple[NotionalExecution, ...] | None
+    top_bid_apr: float | None = None
+    top_ask_apr: float | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -71,6 +73,21 @@ class MarketExecutionObservation:
                 ) from exc
             if not math.isfinite(price) or price <= 0:
                 raise ValueError("collateral_price_usd must be finite and positive")
+        for value, name in (
+            (self.top_bid_apr, "top_bid_apr"),
+            (self.top_ask_apr, "top_ask_apr"),
+        ):
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be finite or null")
+            try:
+                apr = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be finite or null") from exc
+            if not math.isfinite(apr):
+                raise ValueError(f"{name} must be finite or null")
+            object.__setattr__(self, name, apr)
         if self.executions is not None:
             executions = tuple(self.executions)
             seen_notionals: set[float] = set()
@@ -245,14 +262,11 @@ def _directional_row(
     long_ask = long_execution.ask if long_execution is not None else None
     short_bid_vwap = short_bid.vwap_apr if short_bid is not None else None
     long_ask_vwap = long_ask.vwap_apr if long_ask is not None else None
+    short_top_bid_apr = short_observation.top_bid_apr
+    long_top_ask_apr = long_observation.top_ask_apr
     top_spread = None
-    if (
-        short_bid is not None
-        and long_ask is not None
-        and short_bid.top_apr is not None
-        and long_ask.top_apr is not None
-    ):
-        top_spread = short_bid.top_apr - long_ask.top_apr
+    if short_top_bid_apr is not None and long_top_ask_apr is not None:
+        top_spread = short_top_bid_apr - long_top_ask_apr
 
     fully_executable = not reasons
     executable_spread = None
@@ -277,8 +291,8 @@ def _directional_row(
         "short_bid_vwap_apr": short_bid_vwap,
         "long_ask_vwap_apr": long_ask_vwap,
         "executable_spread_apr": executable_spread,
-        "short_top_bid_apr": short_bid.top_apr if short_bid is not None else None,
-        "long_top_ask_apr": long_ask.top_apr if long_ask is not None else None,
+        "short_top_bid_apr": short_top_bid_apr,
+        "long_top_ask_apr": long_top_ask_apr,
         "top_of_book_spread_apr": top_spread,
         "short_impact_apr": short_bid.impact_apr if short_bid is not None else None,
         "long_impact_apr": long_ask.impact_apr if long_ask is not None else None,

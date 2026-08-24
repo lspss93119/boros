@@ -78,6 +78,8 @@ def observation(
     executions: tuple[NotionalExecution, ...] | None = None,
     snapshot_age_sec: int | None = 120,
     price_age_sec: int | None = 60,
+    top_bid_apr: float | None = None,
+    top_ask_apr: float | None = None,
 ) -> MarketExecutionObservation:
     return MarketExecutionObservation(
         market_id=market_id,
@@ -88,6 +90,8 @@ def observation(
         price_age_sec=price_age_sec,
         collateral_price_usd=1.0 if price_status == "ok" else None,
         executions=executions,
+        top_bid_apr=top_bid_apr,
+        top_ask_apr=top_ask_apr,
     )
 
 
@@ -102,9 +106,13 @@ def executable_observation(
     bid_top: float | None = None,
     ask_top: float | None = None,
 ) -> MarketExecutionObservation:
+    bid_top = bid_vwap if bid_top is None else bid_top
+    ask_top = ask_vwap if ask_top is None else ask_top
     return observation(
         market_id,
         timestamp=timestamp,
+        top_bid_apr=bid_top,
+        top_ask_apr=ask_top,
         executions=(
             execution(
                 NOTIONAL,
@@ -332,6 +340,73 @@ def test_top_of_book_spread_survives_insufficient_execution_depth():
     assert row["top_of_book_spread_apr"] == pytest.approx(0.047)
     assert row["executable_spread_apr"] is None
     assert row["fully_executable"] is False
+
+
+def test_top_of_book_spread_survives_missing_collateral_price():
+    markets = [market(155, "HYPERLIQUID"), market(201, "BYBIT")]
+    observations = {
+        155: [
+            executable_observation(
+                155, 0.109, 0.115, bid_top=0.109, ask_top=0.115
+            )
+        ],
+        201: [
+            observation(
+                201,
+                price_status="missing",
+                executions=None,
+                top_bid_apr=0.058,
+                top_ask_apr=0.062,
+            )
+        ],
+    }
+
+    row = rows_for_pair(
+        build_executable_opportunities(
+            markets, observations, notionals_usd=(NOTIONAL,)
+        ),
+        155,
+        201,
+    )[0]
+
+    assert row["top_of_book_spread_apr"] == pytest.approx(0.047)
+    assert row["executable_spread_apr"] is None
+    assert row["fully_executable"] is False
+    assert "long_price_missing" in row["invalid_reason"]
+
+
+def test_top_of_book_spread_survives_stale_collateral_price():
+    markets = [market(155, "HYPERLIQUID"), market(201, "BYBIT")]
+    observations = {
+        155: [
+            executable_observation(
+                155, 0.109, 0.115, bid_top=0.109, ask_top=0.115
+            )
+        ],
+        201: [
+            observation(
+                201,
+                price_status="stale",
+                price_age_sec=901,
+                executions=None,
+                top_bid_apr=0.058,
+                top_ask_apr=0.062,
+            )
+        ],
+    }
+
+    row = rows_for_pair(
+        build_executable_opportunities(
+            markets, observations, notionals_usd=(NOTIONAL,)
+        ),
+        155,
+        201,
+    )[0]
+
+    assert row["top_of_book_spread_apr"] == pytest.approx(0.047)
+    assert row["executable_spread_apr"] is None
+    assert row["fully_executable"] is False
+    assert "long_price_stale" in row["invalid_reason"]
 
 
 def test_observation_provenance_and_dte_are_preserved():
