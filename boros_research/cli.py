@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 from .benchmark import build_historical_benchmarks
 from .alert_state import AlertStateStore
 from .build import BuildPaths, run_build
@@ -42,6 +44,15 @@ _SUMMARY_DATASETS = (
     "ohlcv",
     "order-book",
 )
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ENV_PATH = PROJECT_ROOT / ".env"
+
+
+def load_project_environment(env_path: Path | None = None) -> None:
+    """Load the repository-root environment without overriding the process."""
+    load_dotenv(ENV_PATH if env_path is None else env_path, override=False)
 
 
 class DownloadBatchError(RuntimeError):
@@ -386,6 +397,7 @@ def _run_telegram_test_command() -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    load_project_environment()
     parser = build_parser()
     try:
         args = parser.parse_args(argv)

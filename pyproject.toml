@@ -9,6 +9,7 @@ requires-python = ">=3.11"
 dependencies = [
   "duckdb>=1.0,<2",
   "pyarrow>=15",
+  "python-dotenv>=1.0,<2",
 ]
 
 [project.optional-dependencies]

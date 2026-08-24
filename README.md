@@ -104,11 +104,18 @@ Arbitrage with CrossEx process. It never changes CrossEx, writes its SQLite
 database, uses a wallet, or places trades. The normal monitored sizes are
 `$10,000`, `$25,000`, and `$50,000`; `$10,000` is the alert trigger basis.
 
-Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` locally for Telegram delivery.
-The CrossEx token can be supplied with `CROSSEX_API_TOKEN` or
-`CROSSEX_API_TOKEN_FILE`; when neither is set, the companion can read the
-standard local token file at `~/.boros-crossex/config/api-token`. No credential
-is stored in this repository.
+Create a repository-root `.env` for local credentials (see `.env.example`):
+
+```dotenv
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+```
+
+The CLI loads `.env` automatically. Existing shell/exported variables take
+precedence over `.env`, and `.env` is gitignored. The CrossEx token can be
+supplied with `CROSSEX_API_TOKEN` or `CROSSEX_API_TOKEN_FILE`; when neither is
+set, the companion can read the standard local token file at
+`~/.boros-crossex/config/api-token`. No credential is stored in this repository.
 
 Start with a no-send dry run:
 
