@@ -18,8 +18,43 @@ python3 -m boros_research.cli download --refresh-manifest --workers 12
 The manifest is cached at `raw_boros/files.json`, and archive paths are kept
 under `raw_boros/` exactly as listed by the official manifest. Completed files
 are checked by manifest byte size, so rerunning the command is idempotent.
-Task 4 only provides the raw ZIP cache and selective downloader; derived
-Parquet/DuckDB research data is not built yet.
+
+Build the reproducible research outputs after the raw inputs are available:
+
+```bash
+python3 -m boros_research.cli build --refresh-manifest --workers 12
+```
+
+Add `--refresh-metadata` when the official market and collateral catalog cache
+should be refreshed. The build reads or creates these reproducible raw/cache
+inputs:
+
+- `raw_boros/`: immutable historical ZIP archives and `files.json`
+- `raw_api/`: raw Boros market and collateral metadata responses
+- `raw_indicators/`: raw historical collateral-price exports
+
+Canonical derived outputs are written to:
+
+- `data/parquet/`
+- `data/boros.duckdb`
+- `data/build_report.json`
+
+Derived Parquet and DuckDB data can be rebuilt from the raw inputs. The build
+uses only `ohlcv/5m` for the canonical `ohlcv_5m` dataset; `ohlcv/1d` archives
+remain raw inputs. The build is research-only and does not calculate live
+orders, account state, or trading actions.
+
+For development and schema verification, Boros MCP may be configured as:
+
+```toml
+[mcp_servers.boros]
+command = "npx"
+args = ["-y", "@pendle/boros-mcp"]
+```
+
+Boros MCP is a Codex development/research assistant only. The production
+historical pipeline does not depend on MCP, an LLM, an agent key, or a wallet,
+and it never places orders.
 
 ## Run
 

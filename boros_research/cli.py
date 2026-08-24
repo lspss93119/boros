@@ -7,7 +7,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from .config import HISTORICAL_BASE_URL, RAW_BOROS_DIR
+from .build import BuildPaths, run_build
+from .config import (
+    DUCKDB_PATH,
+    HISTORICAL_BASE_URL,
+    PARQUET_DIR,
+    RAW_API_DIR,
+    RAW_BOROS_DIR,
+    RAW_INDICATORS_DIR,
+)
 from .download import (
     DownloadResult,
     Fetcher,
@@ -16,6 +24,7 @@ from .download import (
     refresh_manifest,
 )
 from .manifest import select_archive_files
+from .validation import render_report
 
 
 _SUMMARY_DATASETS = (
@@ -159,6 +168,36 @@ def build_parser() -> argparse.ArgumentParser:
         default=RAW_BOROS_DIR,
         help="raw archive cache directory (default: raw_boros)",
     )
+
+    build = subparsers.add_parser(
+        "build", help="build normalized Parquet and DuckDB research outputs"
+    )
+    build.add_argument(
+        "--refresh-manifest",
+        action="store_true",
+        help="refresh raw_boros/files.json before selecting archives",
+    )
+    build.add_argument(
+        "--refresh-metadata",
+        action="store_true",
+        help="refresh raw_api/markets.json and raw_api/assets.json",
+    )
+    build.add_argument(
+        "--workers",
+        type=_positive_workers,
+        default=12,
+        help="bounded concurrent archive downloads (default: 12)",
+    )
+    build.add_argument("--raw-dir", type=Path, default=RAW_BOROS_DIR)
+    build.add_argument("--raw-api-dir", type=Path, default=RAW_API_DIR)
+    build.add_argument(
+        "--raw-indicators-dir", type=Path, default=RAW_INDICATORS_DIR
+    )
+    build.add_argument("--parquet-dir", type=Path, default=PARQUET_DIR)
+    build.add_argument("--duckdb-path", type=Path, default=DUCKDB_PATH)
+    build.add_argument(
+        "--report-path", type=Path, default=Path("data/build_report.json")
+    )
     return parser
 
 
@@ -178,6 +217,25 @@ def _run_download_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_build_command(args: argparse.Namespace) -> int:
+    paths = BuildPaths(
+        raw_boros_dir=args.raw_dir,
+        raw_api_dir=args.raw_api_dir,
+        raw_indicators_dir=args.raw_indicators_dir,
+        parquet_dir=args.parquet_dir,
+        duckdb_path=args.duckdb_path,
+        report_path=args.report_path,
+    )
+    result = run_build(
+        paths,
+        workers=args.workers,
+        refresh_manifest=args.refresh_manifest,
+        refresh_metadata=args.refresh_metadata,
+    )
+    print(render_report(result.report))
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
@@ -191,6 +249,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "download":
             return _run_download_command(args)
+        if args.command == "build":
+            return _run_build_command(args)
         parser.error(f"unknown command: {args.command}")
     except DownloadBatchError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
