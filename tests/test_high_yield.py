@@ -303,19 +303,20 @@ def test_invalid_maker_does_not_use_valid_both_market_result(tmp_path):
     assert not result.messages
 
 
-def test_maker_failure_does_not_suppress_valid_historical_alert(tmp_path):
+@pytest.mark.parametrize("percentile", [96.0, 99.0])
+def test_maker_failure_does_not_suppress_valid_historical_alert(tmp_path, percentile):
     sent: list[str] = []
     monitor, _state = monitor_for(
         tmp_path,
         ModeClient(maker_apr=0.40, market_apr=0.40, fail_maker=True),
-        Benchmark(96.0),
+        Benchmark(percentile),
         sent,
     )
 
     result = monitor.run_once()
 
     assert len(sent) == 1
-    assert "歷史前 5%" in sent[0]
+    assert ("歷史前 1%" if percentile >= 99.0 else "歷史前 5%") in sent[0]
     assert "HIGH YIELD" not in sent[0]
     assert result.unavailable_notionals == MONITORED_NOTIONALS
 
