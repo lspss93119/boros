@@ -232,6 +232,37 @@ def test_cached_indicator_response_is_not_refetched(tmp_path):
     assert len(calls) == 1
 
 
+def test_invalid_export_is_not_promoted_to_final_cache(tmp_path):
+    calls = []
+
+    def exporter(url, params):
+        calls.append(dict(params))
+        if len(calls) == 1:
+            return "timestamp,asset_price_usd\n1787443200,0\n"
+        return csv_response([(START, 2422.7)])
+
+    kwargs = {
+        "raw_root": tmp_path,
+        "exporter": exporter,
+        "request_delay_sec": 0,
+    }
+    with pytest.raises(ValueError, match="price"):
+        materialize_asset_prices(
+            {5: collateral(5, "HYPE")}, {155: market(155, "HYPE")}, START, START, **kwargs
+        )
+
+    assert list(tmp_path.rglob("*.csv")) == []
+    assert list(tmp_path.rglob("*.part")) == []
+
+    rows = materialize_asset_prices(
+        {5: collateral(5, "HYPE")}, {155: market(155, "HYPE")}, START, START, **kwargs
+    )
+
+    assert len(calls) == 2
+    assert rows[0].price_usd == 2422.7
+    assert len(list(tmp_path.rglob("*.csv"))) == 1
+
+
 def test_invalid_export_price_raises_instead_of_becoming_zero(tmp_path):
     def exporter(url, params):
         return csv_response([(START, 0)])

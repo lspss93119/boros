@@ -300,6 +300,12 @@ def materialize_asset_prices(
             )
             if cache_path.exists():
                 payload = cache_path.read_bytes()
+                parsed_rows = _parse_csv_prices(
+                    payload,
+                    asset.symbol,
+                    reference_market.market_id,
+                    cache_path.as_posix(),
+                )
             else:
                 if last_request_at is not None:
                     elapsed = time.monotonic() - last_request_at
@@ -316,17 +322,15 @@ def materialize_asset_prices(
                     requester(f"{api_base_url.rstrip('/')}/indicators/export", params)
                 )
                 last_request_at = time.monotonic()
-                _write_bytes_atomically(cache_path, payload)
-
-            _merge_prices(
-                prices,
-                _parse_csv_prices(
+                parsed_rows = _parse_csv_prices(
                     payload,
                     asset.symbol,
                     reference_market.market_id,
                     cache_path.as_posix(),
-                ),
-            )
+                )
+                _write_bytes_atomically(cache_path, payload)
+
+            _merge_prices(prices, parsed_rows)
             chunk_start = chunk_end + GRID_INTERVAL_SEC
 
     return tuple(sorted(prices.values(), key=lambda row: (row.asset, row.timestamp)))
