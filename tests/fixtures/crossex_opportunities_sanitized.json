@@ -1,0 +1,124 @@
+{
+  "ok": true,
+  "data": {
+    "groups": [
+      {
+        "tokenId": 3,
+        "collateral": "USDT",
+        "collateralPriceUsd": 1.0,
+        "maturity": 1790294400,
+        "secondsToMaturity": 2793600,
+        "underlying": "HYPE",
+        "markets": [],
+        "pairs": [
+          {
+            "base": "HYPE",
+            "shortLeg": {
+              "marketId": 190,
+              "venue": "Hyperliquid",
+              "crossexVenue": "HYPERLIQUID",
+              "crossexSymbol": "HYPEUSDT",
+              "base": "HYPE",
+              "midApr": 0.11,
+              "execApr": 0.109
+            },
+            "longLeg": {
+              "marketId": 192,
+              "venue": "Bybit",
+              "crossexVenue": "BYBIT",
+              "crossexSymbol": "HYPEUSDT",
+              "base": "HYPE",
+              "midApr": 0.06,
+              "execApr": 0.062
+            },
+            "grossSpreadApr": 0.05,
+            "execSpreadApr": 0.047,
+            "borosImpactApr": 0.003,
+            "makerLeg": null,
+            "costs": {
+              "borosTakerFeeUsd": 1.2,
+              "borosSettleFeeUsd": 0.8,
+              "perpEntryFeesUsd": 2.0,
+              "perpEntrySlippageUsd": 0.5,
+              "perpExitFeesUsd": 1.0,
+              "perpExitSlippageUsd": 0.2,
+              "totalUsd": 5.7,
+              "annualizedApr": 0.001
+            },
+            "capital": {
+              "borosShortImUsd": 2000.0,
+              "borosLongImUsd": 2000.0,
+              "perpShortImUsd": 1000.0,
+              "perpLongImUsd": 1000.0,
+              "shortLeverageMax": 10.0,
+              "longLeverageMax": 10.0
+            },
+            "capitalUsd": 6000.0,
+            "netFixedApr": 0.046,
+            "netFixedAprOnCapital": 0.076,
+            "effectiveLeverage": 1.6667,
+            "estProfitUsd": 350.0,
+            "secondsToMaturity": 2793600,
+            "reasons": []
+          },
+          {
+            "base": "HYPE",
+            "shortLeg": {
+              "marketId": 192,
+              "venue": "Bybit",
+              "crossexVenue": "BYBIT",
+              "crossexSymbol": "HYPEUSDT",
+              "base": "HYPE",
+              "midApr": 0.06,
+              "execApr": 0.058
+            },
+            "longLeg": {
+              "marketId": 190,
+              "venue": "Hyperliquid",
+              "crossexVenue": "HYPERLIQUID",
+              "crossexSymbol": "HYPEUSDT",
+              "base": "HYPE",
+              "midApr": 0.11,
+              "execApr": 0.115
+            },
+            "grossSpreadApr": -0.05,
+            "execSpreadApr": -0.057,
+            "borosImpactApr": 0.007,
+            "makerLeg": null,
+            "costs": {
+              "borosTakerFeeUsd": 1.2,
+              "borosSettleFeeUsd": 0.8,
+              "perpEntryFeesUsd": 2.0,
+              "perpEntrySlippageUsd": 0.5,
+              "perpExitFeesUsd": 1.0,
+              "perpExitSlippageUsd": 0.2,
+              "totalUsd": 5.7,
+              "annualizedApr": 0.001
+            },
+            "capital": {},
+            "capitalUsd": null,
+            "netFixedApr": null,
+            "netFixedAprOnCapital": null,
+            "effectiveLeverage": null,
+            "estProfitUsd": null,
+            "secondsToMaturity": 2793600,
+            "reasons": ["capital unavailable"]
+          }
+        ],
+        "bestPair": null,
+        "warnings": []
+      }
+    ],
+    "meta": {
+      "asOfSec": 1787500000,
+      "notionalUsd": 10000,
+      "borosEntry": "market",
+      "entryMode": "both-market",
+      "exitMode": "close"
+    },
+    "warnings": ["fee model uses an explicit test assumption"]
+  },
+  "meta": {
+    "ts": 1787500000000
+  }
+}
