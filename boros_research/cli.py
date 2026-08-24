@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .benchmark import build_historical_benchmarks
+from .alert_state import AlertStateStore
 from .build import BuildPaths, run_build
 from .config import (
     DUCKDB_PATH,
@@ -25,7 +27,11 @@ from .download import (
     load_cached_manifest,
     refresh_manifest,
 )
+from .crossex_client import CrossExClient, MONITORED_NOTIONALS
+from .live_benchmark import HistoricalBenchmarkLookup
 from .manifest import select_archive_files
+from .monitor import LiveMonitor, render_cycle_summary
+from .telegram import TelegramClient, telegram_test_message
 from .validation import render_report
 
 
@@ -223,6 +229,46 @@ def build_parser() -> argparse.ArgumentParser:
         default=50,
         help="minimum causal cohort sample count (default: 50)",
     )
+
+    monitor = subparsers.add_parser(
+        "monitor", help="read-only CrossEx live benchmark monitor"
+    )
+    monitor.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="evaluate and print alerts without sending Telegram messages",
+    )
+    monitor.add_argument(
+        "--once",
+        action="store_true",
+        help="run one polling cycle instead of the 60-second daemon",
+    )
+    monitor.add_argument(
+        "--base-url",
+        default=os.environ.get("CROSSEX_BASE_URL", "http://127.0.0.1:6688"),
+        help="local CrossEx base URL (default: CROSSEX_BASE_URL or loopback:6688)",
+    )
+    monitor.add_argument("--token-file", type=Path, default=None)
+    monitor.add_argument("--duckdb-path", type=Path, default=DUCKDB_PATH)
+    monitor.add_argument(
+        "--state-path", type=Path, default=Path("data/live_monitor.sqlite3")
+    )
+    monitor.add_argument(
+        "--interval",
+        type=_positive_int,
+        default=60,
+        help="poll interval seconds for daemon mode (default: 60)",
+    )
+    monitor.add_argument(
+        "--min-samples",
+        type=_positive_int,
+        default=50,
+        help="historical cohort minimum (default: 50)",
+    )
+
+    subparsers.add_parser(
+        "telegram-test", help="send one harmless Telegram connectivity test message"
+    )
     return parser
 
 
@@ -281,6 +327,61 @@ def _run_benchmark_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _telegram_sender() -> TelegramClient | None:
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return None
+    return TelegramClient(token, chat_id)
+
+
+def _run_monitor_command(args: argparse.Namespace) -> int:
+    client = CrossExClient(base_url=args.base_url, token_file=args.token_file)
+    benchmark = HistoricalBenchmarkLookup(
+        args.duckdb_path,
+        min_samples=args.min_samples,
+    )
+    # Dry runs deliberately use ephemeral state so a rehearsal cannot disarm
+    # a production alert or count as six hours below a threshold.
+    state = AlertStateStore(":memory:" if args.dry_run else args.state_path)
+    sender = _telegram_sender() if not args.dry_run else None
+    try:
+        monitor = LiveMonitor(
+            client=client,
+            benchmark=benchmark,
+            state=state,
+            telegram_send=None if sender is None else sender.send_message,
+            monitored_notionals=MONITORED_NOTIONALS,
+            poll_interval_seconds=args.interval,
+        )
+        if not args.dry_run and sender is None:
+            print("Telegram credentials missing; opportunity alerts will not be sent.")
+        if args.once:
+            result = monitor.run_once(dry_run=args.dry_run)
+            print(render_cycle_summary(result))
+            for message in result.messages:
+                print("\n" + message)
+            return 0
+        monitor.run_forever(dry_run=args.dry_run)
+        return 0
+    finally:
+        state.close()
+
+
+def _run_telegram_test_command() -> int:
+    sender = _telegram_sender()
+    if sender is None:
+        print(
+            "ERROR: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID locally; "
+            "no credential was provided to this process.",
+            file=sys.stderr,
+        )
+        return 1
+    sender.send_message(telegram_test_message())
+    print("Telegram test message sent successfully")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
@@ -298,6 +399,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_build_command(args)
         if args.command == "benchmark":
             return _run_benchmark_command(args)
+        if args.command == "monitor":
+            return _run_monitor_command(args)
+        if args.command == "telegram-test":
+            return _run_telegram_test_command()
         parser.error(f"unknown command: {args.command}")
     except DownloadBatchError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

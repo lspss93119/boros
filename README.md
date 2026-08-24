@@ -97,6 +97,50 @@ Phase 2 does not provide composite scores, grades, robust z-scores, funding- or
 capital-adjusted scoring, alerts, live Arbitrage with CrossEx integration, or
 trade execution.
 
+### Phase 3 read-only live monitor
+
+The Phase 3 companion reads only `GET /api/opportunities` from the local
+Arbitrage with CrossEx process. It never changes CrossEx, writes its SQLite
+database, uses a wallet, or places trades. The normal monitored sizes are
+`$10,000`, `$25,000`, and `$50,000`; `$10,000` is the alert trigger basis.
+
+Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` locally for Telegram delivery.
+The CrossEx token can be supplied with `CROSSEX_API_TOKEN` or
+`CROSSEX_API_TOKEN_FILE`; when neither is set, the companion can read the
+standard local token file at `~/.boros-crossex/config/api-token`. No credential
+is stored in this repository.
+
+Start with a no-send dry run:
+
+```bash
+python3 -m boros_research.cli monitor --dry-run --once
+```
+
+Run one real evaluation cycle or the 60-second monitor:
+
+```bash
+python3 -m boros_research.cli monitor --once
+python3 -m boros_research.cli monitor
+```
+
+Send a harmless Telegram connectivity test:
+
+```bash
+python3 -m boros_research.cli telegram-test
+```
+
+The monitor compares CrossEx `execSpreadApr` with causal Phase 2 historical
+benchmarks. A 90-day percentile from `P95` to below `P99` sends a normal alert;
+`P99` and above sends an urgent alert. Each level re-arms only after six hours
+of continuously observed below-threshold polls; failed or missing polls do not
+count toward re-arming. Historical benchmark data older than seven UTC
+calendar days suppresses alerts until Phase 1/2 data is refreshed.
+
+CrossEx `capitalUsd` is displayed as **modelled minimum capital**, and
+`estProfitUsd` as modelled **estimated net profit**. These are not guaranteed
+returns or a recommended position size. Live monitoring does not implement
+percentile scoring, grades, dashboards, or automated execution.
+
 ## Run
 
 ```bash
