@@ -173,6 +173,27 @@ const directionKey = structure => [
   structure.longMarketId,
 ].join("|");
 const directionName = structure => `${structure.shortVenue} → ${structure.longVenue}`;
+function directionLabel(structure, structures) {
+  const base = directionName(structure);
+  const candidates = structures.filter(item => (
+    item.asset === structure.asset
+    && item.maturity === structure.maturity
+    && directionName(item) === base
+  ));
+  if (candidates.length <= 1) return base;
+
+  const marketPair = `${structure.shortMarketId}/${structure.longMarketId}`;
+  const marketPairs = new Set(candidates.map(item => `${item.shortMarketId}/${item.longMarketId}`));
+  const sameMarketPair = candidates.filter(item => `${item.shortMarketId}/${item.longMarketId}` === marketPair);
+  const pairTokens = new Set(sameMarketPair.map(item => item.tokenId));
+  if (marketPairs.size > 1) {
+    return pairTokens.size > 1
+      ? `${base} · market ${marketPair} · token ${structure.tokenId}`
+      : `${base} · market ${marketPair}`;
+  }
+  const tokenIds = new Set(candidates.map(item => item.tokenId));
+  return tokenIds.size > 1 ? `${base} · token ${structure.tokenId}` : `${base} · market ${marketPair}`;
+}
 const selectedStructures = () => (state.data?.structures || []).filter(structure => {
   return structure.asset === state.asset
     && directionKey(structure) === state.direction
@@ -203,20 +224,9 @@ function populateFilters() {
 
   const directionStructures = structures.filter(item => item.asset === state.asset);
   const directionByKey = new Map(directionStructures.map(item => [directionKey(item), item]));
-  const baseDirectionCounts = directionStructures.reduce((counts, item) => {
-    const base = directionName(item);
-    counts.set(base, (counts.get(base) || 0) + 1);
-    return counts;
-  }, new Map());
   const directions = [...directionByKey.keys()].sort();
   if (!directions.includes(state.direction)) state.direction = directions[0] || "";
-  setOptions(el.direction, directions, state.direction, value => {
-    const structure = directionByKey.get(value);
-    if (!structure) return value;
-    const base = directionName(structure);
-    if (baseDirectionCounts.get(base) === 1) return base;
-    return `${base} · token ${structure.tokenId} · ${structure.shortMarketId}/${structure.longMarketId}`;
-  });
+  setOptions(el.direction, directions, state.direction, value => directionLabel(directionByKey.get(value), directionStructures));
 
   const expirations = [...new Set(structures
     .filter(item => item.asset === state.asset && directionKey(item) === state.direction)
