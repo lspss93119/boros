@@ -82,10 +82,14 @@ def required_dte_days(
     if spread_apr <= 0:
         return None
 
-    profit_days = 365 * (proxy.cost_usd + min_net_profit_usd) / (notional_usd * spread_apr)
-    return_days = 365 * (
-        proxy.cost_usd + min_holding_return * proxy.capital_usd
-    ) / (notional_usd * spread_apr)
+    profit_days = (
+        365 * (proxy.cost_usd + min_net_profit_usd) / (notional_usd * spread_apr)
+    )
+    return_days = (
+        365
+        * (proxy.cost_usd + min_holding_return * proxy.capital_usd)
+        / (notional_usd * spread_apr)
+    )
     return math.ceil(max(profit_days, return_days))
 
 

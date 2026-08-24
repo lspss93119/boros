@@ -77,13 +77,16 @@ def test_collect_asset_proxy_returns_none_without_valid_pairs():
 def test_required_dte_days_uses_ceil_of_profit_and_return_cutoffs():
     proxy = ProxyEconomics(20, 2000, 1, 1)
 
-    assert required_dte_days(
-        notional_usd=10_000,
-        spread_apr=0.08,
-        proxy=proxy,
-        min_net_profit_usd=50,
-        min_holding_return=0.01,
-    ) == 32
+    assert (
+        required_dte_days(
+            notional_usd=10_000,
+            spread_apr=0.08,
+            proxy=proxy,
+            min_net_profit_usd=50,
+            min_holding_return=0.01,
+        )
+        == 32
+    )
 
 
 @pytest.mark.parametrize(
@@ -112,13 +115,16 @@ def test_required_dte_days_rejects_invalid_finite_inputs(kwargs, exception):
 def test_required_dte_days_returns_none_for_non_positive_spread():
     proxy = ProxyEconomics(20, 2000, 1, 1)
 
-    assert required_dte_days(
-        notional_usd=10_000,
-        spread_apr=0,
-        proxy=proxy,
-        min_net_profit_usd=50,
-        min_holding_return=0.01,
-    ) is None
+    assert (
+        required_dte_days(
+            notional_usd=10_000,
+            spread_apr=0,
+            proxy=proxy,
+            min_net_profit_usd=50,
+            min_holding_return=0.01,
+        )
+        is None
+    )
 
 
 def test_derive_viability_cutoff_calculates_economics_at_integer_cutoff():
@@ -132,14 +138,19 @@ def test_derive_viability_cutoff_calculates_economics_at_integer_cutoff():
         min_holding_return=0.01,
     )
 
-    assert cutoff == ViabilityCutoff(32, 0.08, 70.13698630136986, 50.13698630136986, 0.02506849315068493, proxy)
+    assert cutoff == ViabilityCutoff(
+        32, 0.08, 70.13698630136986, 50.13698630136986, 0.02506849315068493, proxy
+    )
 
 
 def test_derive_viability_cutoff_returns_none_for_non_positive_spread():
     proxy = ProxyEconomics(20, 2000, 1, 1)
 
-    assert derive_viability_cutoff(
-        notional_usd=10_000,
-        reference_p95_spread_apr=-0.01,
-        proxy=proxy,
-    ) is None
+    assert (
+        derive_viability_cutoff(
+            notional_usd=10_000,
+            reference_p95_spread_apr=-0.01,
+            proxy=proxy,
+        )
+        is None
+    )
