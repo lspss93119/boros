@@ -5,6 +5,22 @@ datasets comparing Boros implied APR with realized exchange funding APR.
 
 Source: https://historical-data.boros.finance/index.html
 
+## Arbitrage Research
+
+The separate research CLI caches immutable Boros ZIP archives and selects
+lightweight history for the full archive universe plus
+CrossEx-compatible `order-book/combined_0.0001` history:
+
+```bash
+python3 -m boros_research.cli download --refresh-manifest --workers 12
+```
+
+The manifest is cached at `raw_boros/files.json`, and archive paths are kept
+under `raw_boros/` exactly as listed by the official manifest. Completed files
+are checked by manifest byte size, so rerunning the command is idempotent.
+Task 4 only provides the raw ZIP cache and selective downloader; derived
+Parquet/DuckDB research data is not built yet.
+
 ## Run
 
 ```bash
