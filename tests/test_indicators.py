@@ -1,3 +1,5 @@
+import io
+from contextlib import nullcontext
 from datetime import date
 from decimal import Decimal
 
@@ -11,6 +13,23 @@ from boros_research.indicators import (
     price_at_or_before,
     select_reference_market,
 )
+
+
+def test_live_export_request_sets_boros_user_agent(monkeypatch):
+    import boros_research.indicators as module
+
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return nullcontext(io.BytesIO(b"timestamp,asset_price_usd\n"))
+
+    monkeypatch.setattr(module, "urlopen", fake_urlopen)
+
+    assert module._request_export("https://example.test/export", {}) == (
+        b"timestamp,asset_price_usd\n"
+    )
+    assert requests[0][0].get_header("User-agent") == "boros-research/0.1"
 
 
 START = 1787443200

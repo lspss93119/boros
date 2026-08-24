@@ -1,4 +1,6 @@
+import io
 import json
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,21 @@ from boros_research.market_metadata import (
     normalize_market_catalog,
     venue_from_market_symbol,
 )
+
+
+def test_live_json_request_sets_boros_user_agent(monkeypatch):
+    import boros_research.market_metadata as module
+
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return nullcontext(io.BytesIO(b'{"ok": true}'))
+
+    monkeypatch.setattr(module, "urlopen", fake_urlopen)
+
+    assert module._request_json("https://example.test/markets", {}) == {"ok": True}
+    assert requests[0][0].get_header("User-agent") == "boros-research/0.1"
 
 
 FIXTURES = Path(__file__).parent / "fixtures"

@@ -262,7 +262,13 @@ def normalize_assets(value: Any) -> dict[int, CollateralAsset]:
 def _request_json(url: str, params: Mapping[str, Any]) -> Any:
     query = urlencode(params)
     request_url = f"{url}?{query}" if query else url
-    request = Request(request_url, headers={"Accept": "application/json"})
+    request = Request(
+        request_url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "boros-research/0.1",
+        },
+    )
     with urlopen(request, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
 

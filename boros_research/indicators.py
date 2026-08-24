@@ -161,7 +161,10 @@ def _request_export(url: str, params: Mapping[str, Any]) -> bytes:
     query = urlencode(params)
     request = Request(
         f"{url}?{query}" if query else url,
-        headers={"Accept": "text/csv"},
+        headers={
+            "Accept": "text/csv",
+            "User-Agent": "boros-research/0.1",
+        },
     )
     with urlopen(request, timeout=60) as response:
         return response.read()
