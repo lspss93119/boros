@@ -31,6 +31,7 @@ from .datasets import (
 )
 from .download import (
     Fetcher,
+    collision_safe_target_paths,
     download_archive_file,
     load_cached_manifest,
     refresh_manifest,
@@ -86,6 +87,7 @@ class BuildResult:
 @dataclass
 class _BuildState:
     selected: list[Mapping[str, Any]] = field(default_factory=list)
+    physical_targets: dict[str, Path] = field(default_factory=dict)
     source_files_present: int = 0
     parse_failures: int = 0
     parse_failure_paths: set[str] = field(default_factory=set)
@@ -144,8 +146,15 @@ def _path_text(entry: Mapping[str, Any]) -> str:
     return path
 
 
-def _target_for_entry(raw_root: Path, entry: Mapping[str, Any]) -> Path:
-    relative = PurePosixPath(_path_text(entry))
+def _target_for_entry(
+    raw_root: Path,
+    entry: Mapping[str, Any],
+    physical_targets: Mapping[str, Path] | None = None,
+) -> Path:
+    path_text = _path_text(entry)
+    if physical_targets is not None and path_text in physical_targets:
+        return Path(physical_targets[path_text])
+    relative = PurePosixPath(path_text)
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError(f"unsafe selected archive path: {relative}")
     return Path(raw_root).joinpath(*relative.parts)
@@ -188,6 +197,7 @@ def _download_and_validate_sources(
         key=lambda entry: _path_text(entry),
     )
     state.selected = selected
+    state.physical_targets = collision_safe_target_paths(selected, raw_root)
     download_archive_files = download_selected_files
     download_archive_files(
         selected,
@@ -200,7 +210,7 @@ def _download_and_validate_sources(
     for entry in selected:
         path = _path_text(entry)
         expected = _entry_size(entry)
-        target = _target_for_entry(raw_root, entry)
+        target = _target_for_entry(raw_root, entry, state.physical_targets)
         if target.is_file() and target.stat().st_size == expected:
             state.source_files_present += 1
         else:
@@ -250,6 +260,7 @@ def _load_metadata(
 def _ingest_lightweight(
     selected: Sequence[Mapping[str, Any]],
     raw_root: Path,
+    physical_targets: Mapping[str, Path] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {
         "market_data": [],
@@ -262,14 +273,14 @@ def _ingest_lightweight(
 
     for entry in sorted(selected, key=_path_text):
         source_path = _path_text(entry)
-        path = _target_for_entry(raw_root, entry)
+        path = _target_for_entry(raw_root, entry, physical_targets)
         if _is_prefix(source_path, "market-data/"):
-            result["market_data"].extend(normalize_market_data(path, raw_root=raw_root))
+            result["market_data"].extend(normalize_market_data(path, raw_root=None))
         elif _is_prefix(source_path, "funding-rate/") or _is_prefix(
             source_path, "underlying-apr/"
         ):
             priority = 0 if source_path.startswith("funding-rate/") else 1
-            for row in normalize_funding_rates(path, raw_root=raw_root):
+            for row in normalize_funding_rates(path, raw_root=None):
                 key = (row["venue"], row["asset"], row["timestamp"])
                 previous = funding_by_key.get(key)
                 if previous is None:
@@ -285,9 +296,9 @@ def _ingest_lightweight(
                     funding_by_key[key] = dict(row)
                     funding_priority[key] = priority
         elif _is_prefix(source_path, "settlement/"):
-            result["settlements"].extend(normalize_settlements(path, raw_root=raw_root))
+            result["settlements"].extend(normalize_settlements(path, raw_root=None))
         elif _is_prefix(source_path, "ohlcv/5m/"):
-            result["ohlcv_5m"].extend(normalize_ohlcv_5m(path, raw_root=raw_root))
+            result["ohlcv_5m"].extend(normalize_ohlcv_5m(path, raw_root=None))
         elif _is_prefix(source_path, "ohlcv/1d/"):
             # Validate the raw member stream but deliberately do not write daily
             # rows into the canonical ohlcv_5m dataset.
@@ -339,6 +350,7 @@ def _book_rows(
     raw_root: Path,
     markets: Mapping[int, MarketInfo],
     missing_ids: set[int],
+    physical_targets: Mapping[str, Path] | None = None,
 ) -> list[dict[str, Any]]:
     snapshots: dict[
         int, dict[tuple[int, int | None], tuple[OrderBookSnapshot, str]]
@@ -356,7 +368,7 @@ def _book_rows(
             raise ValueError(f"{source_path}: expected combined_0.0001 order-book archive")
         market_slug = parse_market_slug(parts[1])
         market = _validate_book_market(source_path, market_slug, markets, missing_ids)
-        for raw in iter_ndjson_zip(_target_for_entry(raw_root, entry)):
+        for raw in iter_ndjson_zip(_target_for_entry(raw_root, entry, physical_targets)):
             snapshot = parse_combined_snapshot(raw)
             identity = (snapshot.timestamp, snapshot.block_number)
             previous = snapshots[market.market_id].get(identity)
@@ -691,12 +703,17 @@ def run_build(
             refresh=refresh_metadata,
             requester=metadata_requester,
         )
-        lightweight = _ingest_lightweight(state.selected, paths.raw_boros_dir)
+        lightweight = _ingest_lightweight(
+            state.selected,
+            paths.raw_boros_dir,
+            state.physical_targets,
+        )
         book_rows = _book_rows(
             state.selected,
             paths.raw_boros_dir,
             markets,
             state.metadata_missing_market_ids,
+            state.physical_targets,
         )
         if book_rows:
             state.coverage_start = min(int(row["grid_timestamp"]) for row in book_rows)

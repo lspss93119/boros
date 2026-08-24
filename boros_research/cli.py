@@ -19,6 +19,7 @@ from .config import (
 from .download import (
     DownloadResult,
     Fetcher,
+    collision_safe_target_paths,
     download_archive_file,
     load_cached_manifest,
     refresh_manifest,
@@ -109,6 +110,7 @@ def download_selected_files(
 
     failures: list[tuple[str, Exception]] = []
     results: list[DownloadResult] = []
+    target_paths = collision_safe_target_paths(selected, raw_dir)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(
@@ -117,6 +119,7 @@ def download_selected_files(
                 raw_dir,
                 fetcher,
                 base_url,
+                target_path=target_paths[str(entry["path"])],
             ): entry
             for entry in selected
         }

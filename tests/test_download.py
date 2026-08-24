@@ -5,8 +5,13 @@ from pathlib import Path
 import pytest
 
 from boros_research.cli import main as cli_main
+from boros_research.cli import download_selected_files
 from boros_research.cli import render_selection_summary
-from boros_research.download import download_archive_file, refresh_manifest
+from boros_research.download import (
+    collision_safe_target_paths,
+    download_archive_file,
+    refresh_manifest,
+)
 
 
 def manifest_entry(path="market-data/example/2026-08.ndjson.zip", size=4):
@@ -29,6 +34,36 @@ def test_existing_file_with_expected_size_is_skipped(tmp_path):
     assert result.status == "skipped"
     assert result.bytes_written == entry["size"]
     assert calls == []
+
+
+def test_casefold_colliding_manifest_paths_use_distinct_targets(tmp_path):
+    entries = [
+        manifest_entry("funding-rate/Hyperliquid-SKHYNIX.ndjson.zip", 5),
+        manifest_entry("funding-rate/HYPERLIQUID-SKHYNIX.ndjson.zip", 4),
+    ]
+    targets = collision_safe_target_paths(entries, tmp_path)
+
+    assert targets[entries[0]["path"]] != targets[entries[1]["path"]]
+    assert all(
+        ".casefold-collisions" in target.parts for target in targets.values()
+    )
+
+    payloads = {
+        "Hyperliquid-SKHYNIX.ndjson.zip": b"mixed",
+        "HYPERLIQUID-SKHYNIX.ndjson.zip": b"uppr",
+    }
+
+    def fake_fetcher(url):
+        return io.BytesIO(payloads[url.rsplit("/", 1)[-1]])
+
+    download_selected_files(
+        entries,
+        raw_dir=tmp_path,
+        workers=2,
+        fetcher=fake_fetcher,
+    )
+
+    assert {target.read_bytes() for target in targets.values()} == {b"mixed", b"uppr"}
 
 
 class FailingReader:

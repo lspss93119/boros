@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -55,6 +56,36 @@ def _target_path(raw_dir: Path, entry: Mapping[str, Any]) -> tuple[str, int, Pat
     return path, size, raw_dir.joinpath(*relative.parts)
 
 
+def collision_safe_target_paths(
+    entries: Sequence[Mapping[str, Any]],
+    raw_dir: Path = RAW_BOROS_DIR,
+) -> dict[str, Path]:
+    """Return deterministic targets that also work on case-insensitive filesystems.
+
+    Official archive paths are case-sensitive.  When two selected paths differ
+    only by case, mapping both directly below ``raw_dir`` would make them share
+    one local file on common macOS filesystems.  Keep those archives under a
+    deterministic namespace while preserving their original relative suffix.
+    """
+    parsed = [_manifest_entry(entry) for entry in entries]
+    by_casefold: dict[str, list[tuple[str, PurePosixPath]]] = {}
+    for path, _size, relative in parsed:
+        by_casefold.setdefault(path.casefold(), []).append((path, relative))
+
+    targets: dict[str, Path] = {}
+    raw_dir = Path(raw_dir)
+    for path, _size, relative in parsed:
+        variants = by_casefold[path.casefold()]
+        if len({variant_path for variant_path, _ in variants}) == 1:
+            targets[path] = raw_dir.joinpath(*relative.parts)
+            continue
+        digest = hashlib.sha256(path.encode("utf-8")).hexdigest()[:16]
+        targets[path] = raw_dir.joinpath(
+            ".casefold-collisions", digest, *relative.parts
+        )
+    return targets
+
+
 def _default_fetcher(url: str):
     request = Request(
         url,
@@ -102,10 +133,13 @@ def download_archive_file(
     raw_dir: Path = RAW_BOROS_DIR,
     fetcher: Fetcher | None = None,
     base_url: str = HISTORICAL_BASE_URL,
+    *,
+    target_path: Path | None = None,
 ) -> DownloadResult:
     """Download one manifest entry without exposing a partial final archive."""
     raw_dir = Path(raw_dir)
-    path, expected_size, target = _target_path(raw_dir, entry)
+    path, expected_size, default_target = _target_path(raw_dir, entry)
+    target = Path(target_path) if target_path is not None else default_target
 
     if target.exists() and target.is_file() and target.stat().st_size == expected_size:
         return DownloadResult(path=path, status="skipped", bytes_written=expected_size)
