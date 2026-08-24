@@ -9,7 +9,7 @@ const state = {
   market: "",
   notional: 10000,
   view: "spread",
-  lang: new URLSearchParams(window.location.search).get("lang") === "zh" ? "zh" : "en",
+  lang: new URLSearchParams(window.location.search).get("lang") === "en" ? "en" : "zh",
 };
 
 const el = {

@@ -30,7 +30,7 @@ def test_arbitrage_static_site_assets_and_dom_contract():
     assert 'id="notionalComparison"' in html
     assert 'id="leaderboard"' in html
     assert 'href="./index.html"' in html
-    assert 'Historical Arbitrage Explorer' in html
+    assert '歷史套利研究' in html
     assert '歷史套利研究' in html
     assert '.kpis' in css
 
@@ -330,3 +330,73 @@ def test_apr_explorer_uses_taiwan_traditional_chinese():
 
     assert 'state.lang === "zh" ? "zh-TW" : "en"' in javascript
     assert 'switchLanguage: "繁體中文"' in javascript
+
+
+def test_research_pages_default_to_traditional_chinese_and_opt_into_english():
+    apr_html = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+    apr_javascript = (ROOT / "site" / "app.js").read_text(encoding="utf-8")
+    arbitrage_html = (ROOT / "site" / "arbitrage.html").read_text(encoding="utf-8")
+    arbitrage_javascript = (ROOT / "site" / "arbitrage.js").read_text(encoding="utf-8")
+
+    for html in (apr_html, arbitrage_html):
+        assert '<html lang="zh-TW">' in html
+        assert 'id="languageToggle"' in html
+        assert ">English</button>" in html
+
+    for javascript in (apr_javascript, arbitrage_javascript):
+        assert 'new URLSearchParams(window.location.search).get("lang") === "en" ? "en" : "zh"' in javascript
+
+    for term in (
+        "Boros 歷史 APR 看板",
+        "交易所",
+        "資產",
+        "到期日",
+        "全部",
+        "支付更多",
+        "收到更多",
+    ):
+        assert term in apr_html
+    for term in (
+        "歷史套利研究",
+        "資產",
+        "方向",
+        "到期日",
+        "市場",
+        "名目金額",
+        "可成交利差歷史",
+        "歷史分布",
+    ):
+        assert term in arbitrage_html
+
+    assert "Boros Historical APR Explorer" in apr_javascript
+    assert "Historical Arbitrage Explorer" in arbitrage_javascript
+    assert 'id="exchangeSelect"' in apr_html
+    assert 'id="assetSelect"' in arbitrage_html
+
+    assert shutil.which("node") is not None, "Node.js is required for language default regression"
+    node_script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const searches = ["", "?lang=zh", "?lang=en"];
+function languages(path) {
+  const source = fs.readFileSync(path, "utf8");
+  const state = source.match(/const state = \{[\s\S]*?\n\};/)[0];
+  return searches.map(search => vm.runInNewContext(`${state}\nstate.lang`, {
+    URLSearchParams,
+    window: {location: {search}},
+  }));
+}
+process.stdout.write(JSON.stringify({
+  apr: languages("site/app.js"),
+  arbitrage: languages("site/arbitrage.js"),
+}));
+'''
+    result = subprocess.run(
+        ["node", "-e", node_script],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    languages = json.loads(result.stdout)
+    assert languages == {"apr": ["zh", "zh", "en"], "arbitrage": ["zh", "zh", "en"]}

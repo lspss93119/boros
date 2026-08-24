@@ -4,7 +4,7 @@ const state = {
   selectedMarket: null,
   chart: new URLSearchParams(window.location.search).get("chart") === "settlement" ? "settlement" : "apr",
   lens: "all",
-  lang: new URLSearchParams(window.location.search).get("lang") === "zh" ? "zh" : "en",
+  lang: new URLSearchParams(window.location.search).get("lang") === "en" ? "en" : "zh",
 };
 
 const el = {

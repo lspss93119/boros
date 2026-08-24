@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Historical Arbitrage Explorer</title>
+  <title>歷史套利研究</title>
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./arbitrage.css">
 </head>
@@ -11,34 +11,34 @@
   <div id="arbitrageApp">
     <header class="topbar">
       <div>
-        <h1 id="pageTitle" data-zh="歷史套利研究">Historical Arbitrage Explorer</h1>
-        <p id="pageSubtitle">Static historical Boros fixed-rate spread research across exact market structures.</p>
+        <h1 id="pageTitle" data-zh="歷史套利研究">歷史套利研究</h1>
+        <p id="pageSubtitle">以精確市場結構查看 Boros 固定利率可成交利差的歷史研究。</p>
       </div>
       <div class="top-actions">
         <a class="ghost-link" href="./index.html">APR Research</a>
-        <button id="languageToggle" type="button">繁體中文</button>
+        <button id="languageToggle" type="button">English</button>
       </div>
     </header>
 
     <section class="filters" id="filterBar" aria-label="Arbitrage research filters">
       <label>
-        <span id="assetLabel">Asset</span>
+        <span id="assetLabel">資產</span>
         <select id="assetSelect"></select>
       </label>
       <label>
-        <span id="directionLabel">Direction</span>
+        <span id="directionLabel">方向</span>
         <select id="directionSelect"></select>
       </label>
       <label>
-        <span id="expirationLabel">Expiration</span>
+        <span id="expirationLabel">到期日</span>
         <select id="expirationSelect"></select>
       </label>
       <label id="marketFilter" hidden>
-        <span id="marketLabel">Market</span>
+        <span id="marketLabel">市場</span>
         <select id="marketSelect"></select>
       </label>
       <label>
-        <span id="notionalLabel">Notional</span>
+        <span id="notionalLabel">名目金額</span>
         <select id="notionalSelect"></select>
       </label>
     </section>
@@ -49,25 +49,25 @@
       <section class="panel chart-panel">
         <div class="panel-title">
           <div>
-            <h2 id="historyTitle">Executable Spread History</h2>
-            <p id="historySubtitle">Daily aggregation only; missing UTC dates are not connected.</p>
+            <h2 id="historyTitle">可成交利差歷史</h2>
+            <p id="historySubtitle">僅顯示每日彙總；缺少的 UTC 日期不會被連線。</p>
           </div>
           <div class="chart-tabs" role="tablist" aria-label="Historical spread view">
-            <button class="active" id="spreadTab" data-view="spread" type="button">Executable Spread</button>
-            <button id="percentileTab" data-view="percentile" type="button">90D Percentile</button>
+            <button class="active" id="spreadTab" data-view="spread" type="button">可成交利差</button>
+            <button id="percentileTab" data-view="percentile" type="button">90天百分位</button>
           </div>
         </div>
         <div class="chart-shell arbitrage-chart-shell">
           <canvas id="spreadChart" width="1180" height="430"></canvas>
         </div>
-        <p class="chart-note" id="historyNote">Daily median and daily maximum use fully executable observations only.</p>
+        <p class="chart-note" id="historyNote">每日中位數與每日最高值只使用完整可成交觀察。</p>
       </section>
 
       <section class="panel distribution-panel">
         <div class="panel-title">
           <div>
-            <h2 id="distributionTitle">Historical Distribution</h2>
-            <p id="distributionSubtitle">90-day fully executable spread distribution.</p>
+            <h2 id="distributionTitle">歷史分布</h2>
+            <p id="distributionSubtitle">90天完整可成交利差分布。</p>
           </div>
         </div>
         <div class="chart-shell arbitrage-chart-shell">
@@ -79,19 +79,19 @@
       <section class="panel" id="notionalComparison">
         <div class="panel-title">
           <div>
-            <h2 id="notionalTitle">Notional Comparison</h2>
-            <p id="notionalSubtitle">All sizes use the same exact historical timestamp.</p>
+            <h2 id="notionalTitle">名目金額比較</h2>
+            <p id="notionalSubtitle">三種規模使用同一個精確歷史時間戳。</p>
           </div>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th id="notionalHead">Notional</th>
-                <th id="spreadHead">Executable Spread</th>
-                <th id="rankHead">90D Rank</th>
-                <th id="sampleHead">90D Samples</th>
-                <th id="statusHead">Execution Status</th>
+                <th id="notionalHead">名目金額</th>
+                <th id="spreadHead">可成交利差</th>
+                <th id="rankHead">90天排名</th>
+                <th id="sampleHead">90天樣本</th>
+                <th id="statusHead">成交狀態</th>
               </tr>
             </thead>
             <tbody id="notionalComparisonBody"></tbody>
@@ -102,22 +102,22 @@
       <section class="panel" id="leaderboard">
         <div class="panel-title">
           <div>
-            <h2 id="leaderboardTitle">Historical Opportunity Leaderboard</h2>
-            <p id="leaderboardSubtitle">Latest historical state, sorted by 90D rank.</p>
+            <h2 id="leaderboardTitle">歷史套利機會排行榜</h2>
+            <p id="leaderboardSubtitle">最新歷史狀態，依 90天排名排序。</p>
           </div>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th id="assetHead">Asset</th>
-                <th id="directionHead">Direction</th>
-                <th id="expirationHead">Expiration</th>
+                <th id="assetHead">資產</th>
+                <th id="directionHead">方向</th>
+                <th id="expirationHead">到期日</th>
                 <th id="dteHead">DTE</th>
-                <th id="leaderSpreadHead">Executable Spread</th>
-                <th id="leaderRankHead">90D Rank</th>
-                <th id="leaderSampleHead">90D Samples</th>
-                <th id="leaderStatusHead">Execution Status</th>
+                <th id="leaderSpreadHead">可成交利差</th>
+                <th id="leaderRankHead">90天排名</th>
+                <th id="leaderSampleHead">90天樣本</th>
+                <th id="leaderStatusHead">成交狀態</th>
               </tr>
             </thead>
             <tbody id="leaderboardBody"></tbody>

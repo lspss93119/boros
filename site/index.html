@@ -1,41 +1,41 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Boros Historical APR Explorer</title>
+  <title>Boros 歷史 APR 看板</title>
   <link rel="stylesheet" href="./styles.css?v=20260703-cross1">
 </head>
 <body>
   <div id="app">
     <header class="topbar">
       <div>
-        <h1 id="pageTitle">Boros Historical APR Explorer</h1>
-        <p id="pageSubtitle">Explore Boros implied APR against forward realized funding: what the market priced versus what funding actually delivered.</p>
+        <h1 id="pageTitle">Boros 歷史 APR 看板</h1>
+        <p id="pageSubtitle">查看 Boros 隱含 APR 與遠期實際資金費率 APR 的對比：市場定價與最終實際資金費率的差異。</p>
       </div>
       <div class="top-actions">
         <a class="ghost-link" href="./arbitrage.html">Arbitrage Research</a>
-        <button id="languageToggle" type="button">中文</button>
+        <button id="languageToggle" type="button">English</button>
       </div>
     </header>
 
     <section class="filters" aria-label="Analysis filters">
       <label>
-        <span id="exchangeLabel">Exchange</span>
+        <span id="exchangeLabel">交易所</span>
         <select id="exchangeSelect"></select>
       </label>
       <label>
-        <span id="assetLabel">Asset</span>
+        <span id="assetLabel">資產</span>
         <select id="assetSelect"></select>
       </label>
       <label>
-        <span id="maturityLabel">Expiration</span>
+        <span id="maturityLabel">到期日</span>
         <select id="maturitySelect"></select>
       </label>
       <div class="segmented" role="group" aria-label="Basis direction">
-        <button class="active" data-lens="all" type="button" id="lensAll">All</button>
-        <button data-lens="paid" type="button" id="lensPaid">Paid More</button>
-        <button data-lens="received" type="button" id="lensReceived">Received More</button>
+        <button class="active" data-lens="all" type="button" id="lensAll">全部</button>
+        <button data-lens="paid" type="button" id="lensPaid">支付更多</button>
+        <button data-lens="received" type="button" id="lensReceived">收到更多</button>
       </div>
     </section>
 
@@ -47,24 +47,24 @@
           <section class="panel map-panel">
             <div class="panel-title">
               <div>
-                <h2 id="mapTitle">Market Map</h2>
-                <p id="mapSubtitle">Average implied APR versus forward realized APR for the filtered markets.</p>
+                <h2 id="mapTitle">市場地圖</h2>
+                <p id="mapSubtitle">篩選後市場的平均隱含 APR 與遠期實際 APR 對比。</p>
               </div>
             </div>
             <canvas id="scatterChart" width="1180" height="420"></canvas>
-            <p class="chart-note" id="forwardRealizedNote">Forward realized APR is the actual exchange funding APR averaged from each Boros observation date through that market's expiry.</p>
+            <p class="chart-note" id="forwardRealizedNote">遠期實際 APR 指從每個 Boros 觀察日到該市場到期日之間，交易所實際資金費率 APR 的平均值。</p>
           </section>
 
           <section class="panel market-panel">
             <div class="market-heading">
               <div>
-                <p class="eyebrow" id="marketMeta">Market</p>
-                <h2 id="marketTitle">Loading...</h2>
+                <p class="eyebrow" id="marketMeta">市場</p>
+                <h2 id="marketTitle">載入中...</h2>
               </div>
             </div>
             <div class="chart-tabs" role="tablist" aria-label="Market chart">
-              <button class="active" data-chart="apr" type="button" id="tabApr">Implied vs forward realized</button>
-              <button data-chart="settlement" type="button" id="tabSettlement">Implied vs actual settlement</button>
+              <button class="active" data-chart="apr" type="button" id="tabApr">隱含 vs 遠期實際</button>
+              <button data-chart="settlement" type="button" id="tabSettlement">隱含 vs 實際結算</button>
               <button data-chart="ohlcv" type="button" id="tabOhlcv">OHLCV</button>
             </div>
             <div class="chart-shell">
@@ -77,18 +77,18 @@
       <section class="panel cross-panel">
         <div class="panel-title">
           <div>
-            <h2 id="crossTitle">Cross-Exchange Implied APR</h2>
-            <p id="crossSubtitle">Compare the stitched historical implied APR of one underlying asset across all exchanges. Independent of the filters above.</p>
+            <h2 id="crossTitle">跨交易所隱含 APR</h2>
+            <p id="crossSubtitle">比較同一標的資產在各交易所拼接後的歷史隱含 APR，不受上方篩選影響。</p>
           </div>
           <label class="cross-filter">
-            <span id="crossAssetLabel">Underlying asset</span>
+            <span id="crossAssetLabel">標的資產</span>
             <select id="crossAssetSelect"></select>
           </label>
         </div>
         <div class="chart-shell">
           <canvas id="crossChart" width="1180" height="460"></canvas>
         </div>
-        <p class="chart-note" id="crossNote">Each line stitches all of an exchange's markets for this asset into one continuous series, using the market closest to expiry on each date (markets sharing the same expiry are averaged).</p>
+        <p class="chart-note" id="crossNote">每條線將該交易所此資產的所有市場拼接為一條連續序列：每個日期取距到期最近的市場（相同到期日的市場取平均）。</p>
       </section>
     </main>
   </div>
