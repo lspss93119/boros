@@ -6,6 +6,7 @@ const state = {
   asset: "",
   direction: "",
   expiration: "",
+  market: "",
   notional: 10000,
   view: "spread",
   lang: new URLSearchParams(window.location.search).get("lang") === "zh" ? "zh" : "en",
@@ -18,10 +19,13 @@ const el = {
   assetLabel: document.getElementById("assetLabel"),
   directionLabel: document.getElementById("directionLabel"),
   expirationLabel: document.getElementById("expirationLabel"),
+  marketLabel: document.getElementById("marketLabel"),
   notionalLabel: document.getElementById("notionalLabel"),
+  filterBar: document.getElementById("filterBar"),
   asset: document.getElementById("assetSelect"),
   direction: document.getElementById("directionSelect"),
   expiration: document.getElementById("expirationSelect"),
+  market: document.getElementById("marketSelect"),
   notional: document.getElementById("notionalSelect"),
   kpis: document.getElementById("kpis"),
   historyTitle: document.getElementById("historyTitle"),
@@ -61,6 +65,8 @@ const copy = {
     asset: "Asset",
     direction: "Direction",
     expiration: "Expiration",
+    market: "Market",
+    selectMarket: "Select market",
     notional: "Notional",
     latestSpread: "Latest Executable Spread",
     rank: "90D Historical Rank",
@@ -113,6 +119,8 @@ const copy = {
     asset: "資產",
     direction: "方向",
     expiration: "到期日",
+    market: "市場",
+    selectMarket: "選擇市場",
     notional: "名目金額",
     latestSpread: "最新可成交利差",
     rank: "90天歷史排名",
@@ -173,6 +181,40 @@ const directionKey = structure => [
   structure.longMarketId,
 ].join("|");
 const directionName = structure => `${structure.shortVenue} → ${structure.longVenue}`;
+const venueDirectionKey = structure => `${structure.shortVenue}|${structure.longVenue}`;
+const venueDirectionLabel = key => key.split("|").join(" → ");
+function venueDirectionsForAsset(structures, asset) {
+  return [...new Set(structures
+    .filter(item => item.asset === asset)
+    .map(venueDirectionKey))].sort();
+}
+function expirationValuesForDirection(structures, asset, venueDirection) {
+  return [...new Set(structures
+    .filter(item => item.asset === asset && venueDirectionKey(item) === venueDirection)
+    .map(item => item.maturity))].sort();
+}
+function filterStructureCandidates(structures, asset, venueDirection, maturity) {
+  return structures.filter(item => (
+    item.asset === asset
+    && venueDirectionKey(item) === venueDirection
+    && item.maturity === maturity
+  ));
+}
+function resolveSelectedStructure(candidates, selectedMarketKey) {
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  return candidates.find(item => directionKey(item) === selectedMarketKey) || null;
+}
+function marketLabel(structure, candidates) {
+  const marketPair = `${structure.shortMarketId} / ${structure.longMarketId}`;
+  const sameMarketPair = candidates.filter(item => (
+    `${item.shortMarketId} / ${item.longMarketId}` === marketPair
+  ));
+  const tokenIds = new Set(sameMarketPair.map(item => item.tokenId));
+  return tokenIds.size > 1
+    ? `Market ${marketPair} · Token ${structure.tokenId}`
+    : `Market ${marketPair}`;
+}
 function directionLabel(structure, structures) {
   const base = directionName(structure);
   const candidates = structures.filter(item => (
@@ -194,12 +236,13 @@ function directionLabel(structure, structures) {
   const tokenIds = new Set(candidates.map(item => item.tokenId));
   return tokenIds.size > 1 ? `${base} · token ${structure.tokenId}` : `${base} · market ${marketPair}`;
 }
-const selectedStructures = () => (state.data?.structures || []).filter(structure => {
-  return structure.asset === state.asset
-    && directionKey(structure) === state.direction
-    && structure.maturity === state.expiration;
-});
-const selectedStructure = () => selectedStructures().sort((a, b) => a.id.localeCompare(b.id))[0] || null;
+const selectedStructures = () => filterStructureCandidates(
+  state.data?.structures || [],
+  state.asset,
+  state.direction,
+  state.expiration,
+);
+const selectedStructure = () => resolveSelectedStructure(selectedStructures(), state.market);
 const selectedNotionalData = structure => structure?.notionals?.[String(state.notional)] || null;
 
 function setOptions(select, values, selected, label = value => value) {
@@ -222,19 +265,38 @@ function populateFilters() {
   if (!assets.includes(state.asset)) state.asset = assets[0] || "";
   setOptions(el.asset, assets, state.asset);
 
-  const directionStructures = structures.filter(item => item.asset === state.asset);
-  const directionByKey = new Map(directionStructures.map(item => [directionKey(item), item]));
-  const directions = [...directionByKey.keys()].sort();
+  const directions = venueDirectionsForAsset(structures, state.asset);
   if (!directions.includes(state.direction)) state.direction = directions[0] || "";
-  setOptions(el.direction, directions, state.direction, value => directionLabel(directionByKey.get(value), directionStructures));
+  setOptions(el.direction, directions, state.direction, venueDirectionLabel);
 
-  const expirations = [...new Set(structures
-    .filter(item => item.asset === state.asset && directionKey(item) === state.direction)
-    .map(item => item.maturity))].sort();
+  const expirations = expirationValuesForDirection(structures, state.asset, state.direction);
   if (!expirations.includes(state.expiration)) state.expiration = expirations[0] || "";
   setOptions(el.expiration, expirations, state.expiration);
 
   const matching = selectedStructures();
+  const ambiguous = matching.length > 1;
+  el.marketFilter.hidden = !ambiguous;
+  el.filterBar.classList.toggle("market-ambiguous", ambiguous);
+  if (!ambiguous) {
+    state.market = matching.length === 1 ? directionKey(matching[0]) : "";
+    el.market.innerHTML = "";
+  } else {
+    const marketKeys = matching.map(directionKey);
+    if (!marketKeys.includes(state.market)) state.market = "";
+    const ordered = matching.slice().sort((a, b) => directionKey(a).localeCompare(directionKey(b)));
+    el.market.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = t("selectMarket");
+    el.market.appendChild(placeholder);
+    ordered.forEach(item => {
+      const option = document.createElement("option");
+      option.value = directionKey(item);
+      option.textContent = marketLabel(item, matching);
+      el.market.appendChild(option);
+    });
+    el.market.value = state.market;
+  }
   const notionals = matching.length ? NOTIONALS : [];
   if (!notionals.includes(state.notional)) state.notional = notionals.includes(10000) ? 10000 : (notionals[0] || 10000);
   setOptions(el.notional, notionals, state.notional, value => `$${Number(value).toLocaleString("en-US")}`);
@@ -493,8 +555,9 @@ function renderLeaderboard() {
       const structure = state.data.structures.find(item => item.id === row.dataset.structureId);
       if (!structure) return;
       state.asset = structure.asset;
-      state.direction = directionKey(structure);
+      state.direction = venueDirectionKey(structure);
       state.expiration = structure.maturity;
+      state.market = directionKey(structure);
       state.notional = Number(row.dataset.notional);
       populateFilters();
       renderAll();
@@ -510,6 +573,7 @@ function renderLabels() {
   el.assetLabel.textContent = t("asset");
   el.directionLabel.textContent = t("direction");
   el.expirationLabel.textContent = t("expiration");
+  el.marketLabel.textContent = t("market");
   el.notionalLabel.textContent = t("notional");
   ["notionalHead", "spreadHead", "rankHead", "sampleHead", "statusHead", "assetHead", "directionHead", "expirationHead", "dteHead", "leaderSpreadHead", "leaderRankHead", "leaderSampleHead", "leaderStatusHead"].forEach(id => {
     const key = id.replace("leader", "").replace("Head", "");
@@ -539,9 +603,10 @@ async function load() {
   }
 }
 
-el.asset.addEventListener("change", () => { state.asset = el.asset.value; state.direction = ""; state.expiration = ""; renderAll(); });
-el.direction.addEventListener("change", () => { state.direction = el.direction.value; state.expiration = ""; renderAll(); });
-el.expiration.addEventListener("change", () => { state.expiration = el.expiration.value; renderAll(); });
+el.asset.addEventListener("change", () => { state.asset = el.asset.value; state.direction = ""; state.expiration = ""; state.market = ""; renderAll(); });
+el.direction.addEventListener("change", () => { state.direction = el.direction.value; state.expiration = ""; state.market = ""; renderAll(); });
+el.expiration.addEventListener("change", () => { state.expiration = el.expiration.value; state.market = ""; renderAll(); });
+el.market.addEventListener("change", () => { state.market = el.market.value; renderAll(); });
 el.notional.addEventListener("change", () => { state.notional = Number(el.notional.value); renderAll(); });
 el.spreadTab.addEventListener("click", () => { state.view = "spread"; renderHistory(); });
 el.percentileTab.addEventListener("click", () => { state.view = "percentile"; renderHistory(); });

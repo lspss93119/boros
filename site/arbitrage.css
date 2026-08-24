@@ -2,6 +2,10 @@
   grid-template-columns: repeat(4, minmax(150px, 1fr));
 }
 
+#arbitrageApp .filters.market-ambiguous {
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+}
+
 #arbitrageApp main {
   display: grid;
   gap: 14px;
@@ -62,6 +66,10 @@
 
 @media (max-width: 850px) {
   #arbitrageApp .filters {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+
+  #arbitrageApp .filters.market-ambiguous {
     grid-template-columns: repeat(2, minmax(140px, 1fr));
   }
 

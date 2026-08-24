@@ -20,7 +20,7 @@
       </div>
     </header>
 
-    <section class="filters" aria-label="Arbitrage research filters">
+    <section class="filters" id="filterBar" aria-label="Arbitrage research filters">
       <label>
         <span id="assetLabel">Asset</span>
         <select id="assetSelect"></select>
@@ -32,6 +32,10 @@
       <label>
         <span id="expirationLabel">Expiration</span>
         <select id="expirationSelect"></select>
+      </label>
+      <label id="marketFilter" hidden>
+        <span id="marketLabel">Market</span>
+        <select id="marketSelect"></select>
       </label>
       <label>
         <span id="notionalLabel">Notional</span>
