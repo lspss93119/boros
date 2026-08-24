@@ -52,6 +52,116 @@ def test_original_apr_page_contract_and_minimal_navigation_link():
     assert "Arbitrage Research" in html
 
 
+def test_research_pages_link_between_apr_radar_and_arbitrage():
+    apr_html = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+    radar_html = (ROOT / "site" / "radar.html").read_text(encoding="utf-8")
+    arbitrage_html = (ROOT / "site" / "arbitrage.html").read_text(encoding="utf-8")
+
+    assert 'href="./radar.html"' in apr_html
+    assert 'href="./arbitrage.html"' in apr_html
+    assert 'href="./index.html"' in radar_html
+    assert 'href="./arbitrage.html"' in radar_html
+    assert 'href="./index.html"' in arbitrage_html
+    assert 'href="./radar.html"' in arbitrage_html
+
+
+def test_arbitrage_deep_link_initializes_existing_filters_and_falls_back_deterministically():
+    assert shutil.which("node") is not None, "Node.js is required for deep-link regression"
+
+    node_script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync("site/arbitrage.js", "utf8");
+const end = source.lastIndexOf("\nload();");
+const structures = [
+  {asset: "BTC", tokenId: 1, maturity: "2026-08-28", shortVenue: "BINANCE", longVenue: "HYPERLIQUID", shortMarketId: 1, longMarketId: 2},
+  {asset: "HYPE", tokenId: 1, maturity: "2026-08-28", shortVenue: "HYPERLIQUID", longVenue: "BYBIT", shortMarketId: 3, longMarketId: 4},
+  {asset: "HYPE", tokenId: 2, maturity: "2026-09-25", shortVenue: "HYPERLIQUID", longVenue: "BYBIT", shortMarketId: 5, longMarketId: 6},
+  {asset: "HYPE", tokenId: 3, maturity: "2026-10-30", shortVenue: "HYPERLIQUID", longVenue: "OKX", shortMarketId: 7, longMarketId: 8},
+];
+function node(id) {
+  const element = {
+    id, value: "", hidden: false, textContent: "", children: [],
+    classList: {toggle() {}},
+    appendChild(child) { this.children.push(child); return child; },
+    addEventListener() {},
+  };
+  let innerHTML = "";
+  Object.defineProperty(element, "innerHTML", {
+    get() { return innerHTML; },
+    set(value) { innerHTML = value; this.children = []; },
+  });
+  return element;
+}
+function render(search) {
+  const nodes = new Map();
+  [
+    "pageTitle", "pageSubtitle", "languageToggle", "assetLabel", "directionLabel",
+    "expirationLabel", "marketLabel", "notionalLabel", "filterBar", "assetSelect",
+    "directionSelect", "expirationSelect", "marketFilter", "marketSelect", "notionalSelect",
+    "kpis", "historyTitle", "historySubtitle", "historyNote", "spreadTab", "percentileTab",
+    "spreadChart", "distributionTitle", "distributionSubtitle", "distributionChart",
+    "distributionMeta", "notionalTitle", "notionalSubtitle", "notionalComparisonBody",
+    "leaderboardTitle", "leaderboardSubtitle", "leaderboardBody", "arbitrageApp",
+  ].forEach(id => nodes.set(id, node(id)));
+  const document = {
+    documentElement: {lang: "zh-TW"},
+    getElementById(id) { return nodes.get(id); },
+    createElement(tag) { return node(tag); },
+  };
+  return JSON.parse(vm.runInNewContext(`${source.slice(0, end)}
+state.data = {structures};
+populateFilters();
+JSON.stringify({
+  asset: state.asset,
+  direction: state.direction,
+  expiration: state.expiration,
+  notional: state.notional,
+  lang: state.lang,
+  selects: {asset: el.asset.value, direction: el.direction.value, expiration: el.expiration.value, notional: Number(el.notional.value)},
+})`, {
+    document,
+    window: {location: {search}, devicePixelRatio: 1, addEventListener() {}},
+    URLSearchParams,
+    structures,
+  }));
+}
+const linked = render("?asset=HYPE&direction=HYPERLIQUID%7CBYBIT&maturity=2026-09-25&notional=25000&lang=zh");
+const invalidNotional = render("?asset=HYPE&direction=HYPERLIQUID%7CBYBIT&maturity=2026-09-25&notional=12345");
+const invalidDirection = render("?asset=HYPE&direction=NOT_A_REAL_PAIR&maturity=2026-09-25&notional=10000");
+const invalidMaturity = render("?asset=HYPE&direction=HYPERLIQUID%7CBYBIT&maturity=1900-01-01&notional=10000");
+process.stdout.write(JSON.stringify({linked, invalidNotional, invalidDirection, invalidMaturity}));
+'''
+    result = subprocess.run(
+        ["node", "-e", node_script],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    output = json.loads(result.stdout)
+
+    assert output["linked"] == {
+        "asset": "HYPE",
+        "direction": "HYPERLIQUID|BYBIT",
+        "expiration": "2026-09-25",
+        "notional": 25000,
+        "lang": "zh",
+        "selects": {
+            "asset": "HYPE",
+            "direction": "HYPERLIQUID|BYBIT",
+            "expiration": "2026-09-25",
+            "notional": 25000,
+        },
+    }
+    assert output["invalidNotional"]["notional"] == 10000
+    assert output["invalidNotional"]["selects"]["notional"] == 10000
+    assert output["invalidDirection"]["direction"] == "HYPERLIQUID|BYBIT"
+    assert output["invalidMaturity"]["asset"] == "HYPE"
+    assert output["invalidMaturity"]["direction"] == "HYPERLIQUID|BYBIT"
+    assert output["invalidMaturity"]["expiration"] == "2026-08-28"
+
+
 def test_arbitrage_direction_labels_are_clean_but_identity_remains_exact():
     javascript = (ROOT / "site" / "arbitrage.js").read_text(encoding="utf-8")
     assert shutil.which("node") is not None, "Node.js is required for the browser helper regression"
@@ -343,8 +453,8 @@ def test_research_pages_default_to_traditional_chinese_and_opt_into_english():
         assert 'id="languageToggle"' in html
         assert ">English</button>" in html
 
-    for javascript in (apr_javascript, arbitrage_javascript):
-        assert 'new URLSearchParams(window.location.search).get("lang") === "en" ? "en" : "zh"' in javascript
+    assert 'new URLSearchParams(window.location.search).get("lang") === "en" ? "en" : "zh"' in apr_javascript
+    assert 'params.get("lang") === "en" ? "en" : "zh"' in arbitrage_javascript
 
     for term in (
         "Boros 歷史 APR 看板",
@@ -380,8 +490,12 @@ const vm = require("vm");
 const searches = ["", "?lang=zh", "?lang=en"];
 function languages(path) {
   const source = fs.readFileSync(path, "utf8");
-  const state = source.match(/const state = \{[\s\S]*?\n\};/)[0];
-  return searches.map(search => vm.runInNewContext(`${state}\nstate.lang`, {
+  const stateStart = source.indexOf("const state =");
+  const start = source.includes("const params =") ? source.indexOf("const params =") : stateStart;
+  const end = source.indexOf("\n};", stateStart) + 3;
+  const setup = source.slice(start, end);
+  return searches.map(search => vm.runInNewContext(`${setup}\nstate.lang`, {
+    NOTIONALS: [10000, 25000, 50000],
     URLSearchParams,
     window: {location: {search}},
   }));

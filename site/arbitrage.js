@@ -1,15 +1,18 @@
 const DATA_URL = "./data/boros_arbitrage_site_data.json";
 const NOTIONALS = [10000, 25000, 50000];
 
+const params = new URLSearchParams(window.location.search);
+const requestedNotional = Number(params.get("notional"));
+
 const state = {
   data: null,
-  asset: "",
-  direction: "",
-  expiration: "",
+  asset: params.get("asset") || "",
+  direction: params.get("direction") || "",
+  expiration: params.get("maturity") || "",
   market: "",
-  notional: 10000,
+  notional: NOTIONALS.includes(requestedNotional) ? requestedNotional : 10000,
   view: "spread",
-  lang: new URLSearchParams(window.location.search).get("lang") === "en" ? "en" : "zh",
+  lang: params.get("lang") === "en" ? "en" : "zh",
 };
 
 const el = {
