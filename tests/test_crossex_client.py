@@ -77,6 +77,37 @@ def test_three_notional_requests_use_explicit_query_and_get_only():
     assert all("fresh" not in call[1] for call in calls)
 
 
+def test_client_can_request_market_maker_hedge_close_explicitly():
+    payload = fixture_payload()
+    calls: list[tuple[str, dict[str, str], dict[str, str]]] = []
+
+    def requester(url: str, params: dict[str, str], headers: dict[str, str]):
+        calls.append((url, params, headers))
+        result = copy.deepcopy(payload)
+        result["data"]["meta"]["notionalUsd"] = int(params["notionalUsd"])
+        result["data"]["meta"]["entryMode"] = params["entryMode"]
+        return result
+
+    client = CrossExClient(
+        base_url="http://127.0.0.1:6688",
+        token="test-token",
+        request_json=requester,
+    )
+    client.fetch(
+        10_000,
+        boros_entry="market",
+        entry_mode="maker-hedge",
+        exit_mode="close",
+    )
+
+    assert calls[0][1] == {
+        "notionalUsd": "10000",
+        "borosEntry": "market",
+        "entryMode": "maker-hedge",
+        "exitMode": "close",
+    }
+
+
 @pytest.mark.parametrize("field", ["execSpreadApr", "capitalUsd", "estProfitUsd"])
 def test_nullable_economic_fields_are_preserved(field: str):
     payload = fixture_payload()

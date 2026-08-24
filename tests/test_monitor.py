@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 from boros_research.alert_state import AlertStateStore
 from boros_research.crossex_client import (
+    HIGH_YIELD_ENTRY_MODE,
+    MONITORED_NOTIONALS,
+    REFERENCE_ENTRY_MODE,
     CrossExCosts,
     CrossExGroup,
     CrossExLeg,
@@ -80,8 +83,8 @@ class FakeClient:
     def __init__(self):
         self.calls = []
 
-    def fetch(self, notional):
-        self.calls.append(notional)
+    def fetch(self, notional, *, boros_entry, entry_mode, exit_mode):
+        self.calls.append((notional, boros_entry, entry_mode, exit_mode))
         return response(notional)
 
 
@@ -96,8 +99,23 @@ class FakeState:
     def evaluate(self, identity, timestamp, percentile, *, valid=True):
         return self.observe(identity, timestamp, percentile, valid=valid)
 
-    def commit_alert_delivered(self, _identity, _timestamp, _severity):
+    def commit_alert_delivered(self, _identity, _timestamp, _severity, **_kwargs):
         return None
+
+    def evaluate_high_yield(
+        self,
+        _identity,
+        _timestamp,
+        _apr,
+        _seconds_to_maturity,
+        *,
+        valid=True,
+    ):
+        return type(
+            "HighYieldDecision",
+            (),
+            {"classification": None, "hy20_above": False, "hy30_above": False},
+        )()
 
     def mark_missing_except(self, _ids, _timestamp):
         return None
@@ -117,8 +135,12 @@ def test_monitor_queries_all_sizes_aggregates_identity_and_dry_run_sends_nothing
 
     result = monitor.run_once(dry_run=True)
 
-    assert sorted(client.calls) == [10_000, 25_000, 50_000]
-    assert result.group_counts == {10_000: 1, 25_000: 1, 50_000: 1}
+    assert sorted(call[0] for call in client.calls) == sorted(MONITORED_NOTIONALS * 2)
+    assert {call[2] for call in client.calls} == {
+        HIGH_YIELD_ENTRY_MODE,
+        REFERENCE_ENTRY_MODE,
+    }
+    assert result.group_counts == {size: 1 for size in MONITORED_NOTIONALS}
     assert result.mapped_opportunity_count == 1
     assert result.benchmarkable_opportunity_count == 1
     assert result.normal_candidate_count == 1
@@ -129,8 +151,8 @@ def test_monitor_queries_all_sizes_aggregates_identity_and_dry_run_sends_nothing
 
 def test_missing_size_is_reported_without_reusing_old_cross_ex_data(tmp_path):
     class PartialClient(FakeClient):
-        def fetch(self, notional):
-            self.calls.append(notional)
+        def fetch(self, notional, *, boros_entry, entry_mode, exit_mode):
+            self.calls.append((notional, boros_entry, entry_mode, exit_mode))
             if notional == 25_000:
                 raise RuntimeError("unavailable")
             return response(notional)
@@ -283,8 +305,13 @@ def test_successful_p95_then_p99_sends_urgent_escalation(tmp_path):
 
 def test_monitor_retains_cross_ex_warnings_for_diagnostics_only(tmp_path):
     class WarningClient(FakeClient):
-        def fetch(self, notional):
-            raw = super().fetch(notional)
+        def fetch(self, notional, *, boros_entry, entry_mode, exit_mode):
+            raw = super().fetch(
+                notional,
+                boros_entry=boros_entry,
+                entry_mode=entry_mode,
+                exit_mode=exit_mode,
+            )
             return replace(
                 raw,
                 warnings=(f"response warning {notional}",),
@@ -302,9 +329,9 @@ def test_monitor_retains_cross_ex_warnings_for_diagnostics_only(tmp_path):
 
     result = monitor.run_once(dry_run=True)
 
-    assert len(result.warnings) == 6
+    assert len(result.warnings) == 10
     assert "response warning 10000" in result.warnings
-    assert "group warning 50000" in result.warnings
+    assert "group warning 200000" in result.warnings
 
 
 def test_heartbeat_contains_compact_cycle_observability(tmp_path):

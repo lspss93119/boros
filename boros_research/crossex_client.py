@@ -17,7 +17,11 @@ from .normalize import normalize_venue
 
 DEFAULT_CROSSEX_BASE_URL = "http://127.0.0.1:6688"
 DEFAULT_CROSSEX_TOKEN_FILE = Path("~/.boros-crossex/config/api-token").expanduser()
-MONITORED_NOTIONALS = (10_000, 25_000, 50_000)
+MONITORED_NOTIONALS = (10_000, 25_000, 50_000, 100_000, 200_000)
+REFERENCE_ENTRY_MODE = "both-market"
+HIGH_YIELD_ENTRY_MODE = "maker-hedge"
+BOROS_ENTRY_MODE = "market"
+EXIT_MODE = "close"
 
 JsonRequester = Callable[[str, dict[str, str], dict[str, str]], Any]
 
@@ -62,6 +66,12 @@ def _string_tuple(value: Any, context: str) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise ValueError(f"{context} must be a string list")
     return tuple(_required_string(item, f"{context}[]") for item in value)
+
+
+def _optional_string(value: Any, context: str) -> str | None:
+    if value is None:
+        return None
+    return _required_string(value, context)
 
 
 @dataclass(frozen=True)
@@ -136,6 +146,9 @@ class CrossExResponse:
     as_of_timestamp: int
     groups: tuple[CrossExGroup, ...]
     warnings: tuple[str, ...]
+    boros_entry: str | None = None
+    entry_mode: str | None = None
+    exit_mode: str | None = None
 
 
 def _normalize_leg(value: Any, context: str) -> CrossExLeg:
@@ -274,6 +287,9 @@ def normalize_opportunities_response(value: Any, *, requested_notional: int) -> 
         as_of_timestamp=as_of_timestamp,
         groups=tuple(_normalize_group(item, f"CrossEx response.data.groups[{index}]") for index, item in enumerate(groups)),
         warnings=_string_tuple(data.get("warnings"), "CrossEx response.data.warnings"),
+        boros_entry=_optional_string(meta.get("borosEntry"), "CrossEx response.meta.borosEntry"),
+        entry_mode=_optional_string(meta.get("entryMode"), "CrossEx response.meta.entryMode"),
+        exit_mode=_optional_string(meta.get("exitMode"), "CrossEx response.meta.exitMode"),
     )
 
 
@@ -325,14 +341,27 @@ class CrossExClient:
         self._token = _resolve_token(token, token_file)
         self._request_json = request_json or _default_request_json
 
-    def fetch(self, notional_usd: int) -> CrossExResponse:
+    def fetch(
+        self,
+        notional_usd: int,
+        *,
+        boros_entry: str = BOROS_ENTRY_MODE,
+        entry_mode: str = REFERENCE_ENTRY_MODE,
+        exit_mode: str = EXIT_MODE,
+    ) -> CrossExResponse:
         if isinstance(notional_usd, bool) or not isinstance(notional_usd, int) or notional_usd <= 0:
             raise ValueError("notional_usd must be a positive integer")
+        if boros_entry != BOROS_ENTRY_MODE:
+            raise ValueError("boros_entry must be market")
+        if entry_mode not in {REFERENCE_ENTRY_MODE, HIGH_YIELD_ENTRY_MODE}:
+            raise ValueError("entry_mode must be both-market or maker-hedge")
+        if exit_mode != EXIT_MODE:
+            raise ValueError("exit_mode must be close")
         params = {
             "notionalUsd": str(notional_usd),
-            "borosEntry": "market",
-            "entryMode": "both-market",
-            "exitMode": "close",
+            "borosEntry": boros_entry,
+            "entryMode": entry_mode,
+            "exitMode": exit_mode,
         }
         headers = {"x-arb-token": self._token} if self._token else {}
         try:
@@ -345,4 +374,12 @@ class CrossExClient:
             raise
         except Exception as exc:
             raise RuntimeError("CrossEx opportunity GET failed") from exc
-        return normalize_opportunities_response(payload, requested_notional=notional_usd)
+        response = normalize_opportunities_response(payload, requested_notional=notional_usd)
+        for field, actual, expected in (
+            ("boros_entry", response.boros_entry, boros_entry),
+            ("entry_mode", response.entry_mode, entry_mode),
+            ("exit_mode", response.exit_mode, exit_mode),
+        ):
+            if actual is not None and actual != expected:
+                raise ValueError(f"CrossEx response {field} does not match requested mode")
+        return response

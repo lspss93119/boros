@@ -13,11 +13,10 @@ import duckdb
 
 from boros_research.crossex_client import (
     DEFAULT_CROSSEX_BASE_URL,
-    MONITORED_NOTIONALS,
     CrossExClient,
     CrossExPair,
 )
-from boros_research.radar import build_radar_payload
+from boros_research.radar import RADAR_NOTIONALS, build_radar_payload
 from boros_research.radar_economics import ProxyEconomics, collect_asset_proxy
 
 
@@ -50,7 +49,7 @@ def collect_proxies(
     current_venues: set[str] = set()
     warnings: list[dict[str, object]] = []
 
-    for notional_usd in MONITORED_NOTIONALS:
+    for notional_usd in RADAR_NOTIONALS:
         try:
             response = client.fetch(notional_usd)
         except (RuntimeError, ValueError) as exc:

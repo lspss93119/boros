@@ -14,6 +14,9 @@ REARM_SECONDS = 6 * 60 * 60
 DEFAULT_POLL_INTERVAL_SECONDS = 60
 P95 = 95.0
 P99 = 99.0
+HY20 = 0.20
+HY30 = 0.30
+HIGH_YIELD_DTE_SECONDS = 14 * 86400
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,13 @@ class AlertSnapshot:
     p99_run_last_success: int | None
     p99_observation_count: int
     last_success_timestamp: int | None
+    hy20_armed: bool
+    hy30_armed: bool
+    hy20_below_since: int | None
+    hy30_below_since: int | None
+    hy20_last_alert_timestamp: int | None
+    hy30_last_alert_timestamp: int | None
+    hy_last_success_timestamp: int | None
 
 
 @dataclass(frozen=True)
@@ -64,6 +74,13 @@ class AlertDecision:
     p95_above: bool
     p99_above: bool
     p95_live_detected_minutes: int = 0
+
+
+@dataclass(frozen=True)
+class HighYieldDecision:
+    classification: str | None
+    hy20_above: bool
+    hy30_above: bool
 
 
 def _default_snapshot(identity: AlertIdentity) -> AlertSnapshot:
@@ -82,6 +99,13 @@ def _default_snapshot(identity: AlertIdentity) -> AlertSnapshot:
         p99_run_last_success=None,
         p99_observation_count=0,
         last_success_timestamp=None,
+        hy20_armed=True,
+        hy30_armed=True,
+        hy20_below_since=None,
+        hy30_below_since=None,
+        hy20_last_alert_timestamp=None,
+        hy30_last_alert_timestamp=None,
+        hy_last_success_timestamp=None,
     )
 
 
@@ -126,13 +150,41 @@ class AlertStateStore:
                 p99_run_last_success INTEGER,
                 p99_observation_count INTEGER NOT NULL DEFAULT 0,
                 last_success_timestamp INTEGER,
-                last_poll_timestamp INTEGER
+                last_poll_timestamp INTEGER,
+                hy20_armed INTEGER NOT NULL DEFAULT 1,
+                hy30_armed INTEGER NOT NULL DEFAULT 1,
+                hy20_below_since INTEGER,
+                hy30_below_since INTEGER,
+                hy20_last_alert_timestamp INTEGER,
+                hy30_last_alert_timestamp INTEGER,
+                hy_last_success_timestamp INTEGER
             )
             """
         )
+        self._migrate_schema()
         self.rearm_seconds = rearm_seconds
         self.poll_interval_seconds = poll_interval_seconds
         self.continuity_tolerance_seconds = max(2 * poll_interval_seconds, 120)
+
+    def _migrate_schema(self) -> None:
+        existing = {
+            row[1]
+            for row in self._connection.execute("PRAGMA table_info(alert_state)").fetchall()
+        }
+        additions = {
+            "hy20_armed": "INTEGER NOT NULL DEFAULT 1",
+            "hy30_armed": "INTEGER NOT NULL DEFAULT 1",
+            "hy20_below_since": "INTEGER",
+            "hy30_below_since": "INTEGER",
+            "hy20_last_alert_timestamp": "INTEGER",
+            "hy30_last_alert_timestamp": "INTEGER",
+            "hy_last_success_timestamp": "INTEGER",
+        }
+        for column, definition in additions.items():
+            if column not in existing:
+                self._connection.execute(
+                    f"ALTER TABLE alert_state ADD COLUMN {column} {definition}"
+                )
 
     def close(self) -> None:
         self._connection.close()
@@ -183,6 +235,13 @@ class AlertStateStore:
             p99_run_last_success=values["p99_run_last_success"],
             p99_observation_count=values["p99_observation_count"],
             last_success_timestamp=values["last_success_timestamp"],
+            hy20_armed=bool(values["hy20_armed"]),
+            hy30_armed=bool(values["hy30_armed"]),
+            hy20_below_since=values["hy20_below_since"],
+            hy30_below_since=values["hy30_below_since"],
+            hy20_last_alert_timestamp=values["hy20_last_alert_timestamp"],
+            hy30_last_alert_timestamp=values["hy30_last_alert_timestamp"],
+            hy_last_success_timestamp=values["hy_last_success_timestamp"],
         )
 
     def _mark_unknown(self, identity: AlertIdentity, timestamp: int) -> None:
@@ -198,6 +257,20 @@ class AlertStateStore:
                 p99_run_start = NULL,
                 p99_run_last_success = NULL,
                 p99_observation_count = 0,
+                last_poll_timestamp = ?
+            WHERE identity_key = ?
+            """,
+            (timestamp, identity.key),
+        )
+
+    def _mark_high_yield_unknown(self, identity: AlertIdentity, timestamp: int) -> None:
+        self._ensure(identity)
+        self._connection.execute(
+            """
+            UPDATE alert_state SET
+                hy20_below_since = NULL,
+                hy30_below_since = NULL,
+                hy_last_success_timestamp = NULL,
                 last_poll_timestamp = ?
             WHERE identity_key = ?
             """,
@@ -338,11 +411,127 @@ class AlertStateStore:
             p95_live_detected_minutes=p95_duration,
         )
 
+    def evaluate_high_yield(
+        self,
+        identity: AlertIdentity,
+        timestamp: int,
+        net_fixed_apr_on_capital: float | None,
+        seconds_to_maturity: int | None,
+        *,
+        valid: bool = True,
+    ) -> HighYieldDecision:
+        if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0:
+            raise ValueError("timestamp must be a non-negative integer")
+        if net_fixed_apr_on_capital is not None:
+            if isinstance(net_fixed_apr_on_capital, bool) or not math.isfinite(
+                float(net_fixed_apr_on_capital)
+            ):
+                raise ValueError("net_fixed_apr_on_capital must be finite or null")
+        if seconds_to_maturity is not None:
+            if (
+                isinstance(seconds_to_maturity, bool)
+                or not isinstance(seconds_to_maturity, int)
+                or seconds_to_maturity < 0
+            ):
+                raise ValueError("seconds_to_maturity must be a non-negative integer or null")
+
+        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            self._ensure(identity)
+            if not valid or net_fixed_apr_on_capital is None or seconds_to_maturity is None:
+                self._mark_high_yield_unknown(identity, timestamp)
+                self._connection.execute("COMMIT")
+                return HighYieldDecision(None, False, False)
+
+            value = float(net_fixed_apr_on_capital)
+            snapshot = self.snapshot(identity)
+            continuity_broken = (
+                snapshot.hy_last_success_timestamp is not None
+                and timestamp - snapshot.hy_last_success_timestamp
+                > self.continuity_tolerance_seconds
+            )
+            hy20_below_since = (
+                None if continuity_broken else snapshot.hy20_below_since
+            )
+            hy30_below_since = (
+                None if continuity_broken else snapshot.hy30_below_since
+            )
+            hy20_armed = snapshot.hy20_armed
+            hy30_armed = snapshot.hy30_armed
+
+            if (
+                not hy20_armed
+                and hy20_below_since is not None
+                and timestamp - hy20_below_since >= self.rearm_seconds
+            ):
+                hy20_armed = True
+                hy20_below_since = None
+            if (
+                not hy30_armed
+                and hy30_below_since is not None
+                and timestamp - hy30_below_since >= self.rearm_seconds
+            ):
+                hy30_armed = True
+                hy30_below_since = None
+
+            hy20_above = value >= HY20 and seconds_to_maturity >= HIGH_YIELD_DTE_SECONDS
+            hy30_above = value >= HY30 and seconds_to_maturity >= HIGH_YIELD_DTE_SECONDS
+
+            if value >= HY20:
+                hy20_below_since = None
+            elif not hy20_armed:
+                hy20_below_since = (
+                    hy20_below_since if hy20_below_since is not None else timestamp
+                )
+            else:
+                hy20_below_since = None
+
+            if value >= HY30:
+                hy30_below_since = None
+            elif not hy30_armed:
+                hy30_below_since = (
+                    hy30_below_since if hy30_below_since is not None else timestamp
+                )
+            else:
+                hy30_below_since = None
+
+            classification: str | None = None
+            if hy30_above and hy30_armed:
+                classification = "EXCEPTIONAL"
+            elif hy20_above and hy20_armed:
+                classification = "HIGH_YIELD"
+
+            self._connection.execute(
+                """
+                UPDATE alert_state SET
+                    hy20_armed = ?, hy30_armed = ?,
+                    hy20_below_since = ?, hy30_below_since = ?,
+                    hy_last_success_timestamp = ?, last_poll_timestamp = ?
+                WHERE identity_key = ?
+                """,
+                (
+                    int(hy20_armed),
+                    int(hy30_armed),
+                    hy20_below_since,
+                    hy30_below_since,
+                    timestamp,
+                    timestamp,
+                    identity.key,
+                ),
+            )
+            self._connection.execute("COMMIT")
+        except Exception:
+            self._connection.execute("ROLLBACK")
+            raise
+        return HighYieldDecision(classification, hy20_above, hy30_above)
+
     def commit_alert_delivered(
         self,
         identity: AlertIdentity,
         timestamp: int,
-        severity: str,
+        severity: str | None,
+        *,
+        high_yield: str | None = None,
     ) -> None:
         """Consume an alert only after its delivery has succeeded.
 
@@ -352,8 +541,12 @@ class AlertStateStore:
         """
         if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0:
             raise ValueError("timestamp must be a non-negative integer")
-        if severity not in {"NORMAL", "URGENT"}:
+        if severity is not None and severity not in {"NORMAL", "URGENT"}:
             raise ValueError("severity must be NORMAL or URGENT")
+        if high_yield is not None and high_yield not in {"HIGH_YIELD", "EXCEPTIONAL"}:
+            raise ValueError("high_yield must be HIGH_YIELD or EXCEPTIONAL")
+        if severity is None and high_yield is None:
+            raise ValueError("at least one alert component is required")
 
         self._connection.execute("BEGIN IMMEDIATE")
         try:
@@ -380,6 +573,34 @@ class AlertStateStore:
                     """,
                     (timestamp, identity.key),
                 )
+            if high_yield == "EXCEPTIONAL":
+                if snapshot.hy20_armed:
+                    self._connection.execute(
+                        """
+                        UPDATE alert_state SET
+                            hy20_armed = 0, hy20_last_alert_timestamp = ?
+                        WHERE identity_key = ?
+                        """,
+                        (timestamp, identity.key),
+                    )
+                if snapshot.hy30_armed:
+                    self._connection.execute(
+                        """
+                        UPDATE alert_state SET
+                            hy30_armed = 0, hy30_last_alert_timestamp = ?
+                        WHERE identity_key = ?
+                        """,
+                        (timestamp, identity.key),
+                    )
+            elif high_yield == "HIGH_YIELD" and snapshot.hy20_armed:
+                self._connection.execute(
+                    """
+                    UPDATE alert_state SET
+                        hy20_armed = 0, hy20_last_alert_timestamp = ?
+                    WHERE identity_key = ?
+                    """,
+                    (timestamp, identity.key),
+                )
             self._connection.execute("COMMIT")
         except Exception:
             self._connection.execute("ROLLBACK")
@@ -395,6 +616,24 @@ class AlertStateStore:
     ) -> AlertDecision:
         """Observe an input without consuming an alert delivery."""
         return self.evaluate(identity, timestamp, percentile_90d, valid=valid)
+
+    def observe_high_yield(
+        self,
+        identity: AlertIdentity,
+        timestamp: int,
+        net_fixed_apr_on_capital: float | None,
+        seconds_to_maturity: int | None,
+        *,
+        valid: bool = True,
+    ) -> HighYieldDecision:
+        """Observe maker-hedge economics without consuming delivery state."""
+        return self.evaluate_high_yield(
+            identity,
+            timestamp,
+            net_fixed_apr_on_capital,
+            seconds_to_maturity,
+            valid=valid,
+        )
 
     def mark_unknown(self, identity: AlertIdentity, timestamp: int) -> None:
         self._connection.execute("BEGIN IMMEDIATE")
@@ -424,6 +663,8 @@ class AlertStateStore:
                 p95_below_since = NULL, p99_below_since = NULL,
                 p95_run_start = NULL, p95_run_last_success = NULL, p95_observation_count = 0,
                 p99_run_start = NULL, p99_run_last_success = NULL, p99_observation_count = 0,
+                hy20_below_since = NULL, hy30_below_since = NULL,
+                hy_last_success_timestamp = NULL,
                 last_poll_timestamp = ?
             WHERE identity_key = ?
             """,

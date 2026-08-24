@@ -23,7 +23,7 @@ class SizeMessage:
 
 @dataclass(frozen=True)
 class AlertMessage:
-    severity: str
+    severity: str | None
     asset: str
     short_venue: str
     long_venue: str
@@ -34,6 +34,9 @@ class AlertMessage:
     live_detected_minutes: int
     warnings: tuple[str, ...] = ()
     p95_live_detected_minutes: int | None = None
+    high_yield_classification: str | None = None
+    reference: SizeMessage | None = None
+    dte_seconds: int | None = None
 
 
 def _apr(value: float | None) -> str:
@@ -63,12 +66,29 @@ def _money(value: float | None, *, signed: bool = False) -> str:
     return f"{value:,.0f}"
 
 
+def holding_period_return(pair: CrossExPair | None) -> float | None:
+    """Return the modelled capital return through maturity, as a fraction."""
+    if pair is None:
+        return None
+    if (
+        pair.est_profit_usd is not None
+        and pair.capital_usd is not None
+        and math.isfinite(float(pair.est_profit_usd))
+        and math.isfinite(float(pair.capital_usd))
+        and pair.capital_usd > 0
+    ):
+        return pair.est_profit_usd / pair.capital_usd
+    if (
+        pair.net_fixed_apr_on_capital is not None
+        and math.isfinite(float(pair.net_fixed_apr_on_capital))
+        and pair.seconds_to_maturity >= 0
+    ):
+        return pair.net_fixed_apr_on_capital * pair.seconds_to_maturity / (365 * 86400)
+    return None
+
+
 def _pair_return(pair: CrossExPair | None) -> str:
-    if pair is None or pair.est_profit_usd is None or pair.capital_usd is None:
-        return "—"
-    if pair.est_profit_usd <= 0 or pair.capital_usd <= 0:
-        return "—"
-    return _apr(pair.est_profit_usd / pair.capital_usd)
+    return _apr(holding_period_return(pair))
 
 
 def _size_line(size: SizeMessage) -> str:
@@ -82,6 +102,13 @@ def _size_line(size: SizeMessage) -> str:
     return f"{label}｜利差 {_apr(size.pair.exec_spread_apr)}｜{percentile}｜淨APR {net_apr}"
 
 
+def _high_yield_size_line(size: SizeMessage) -> str:
+    label = f"${size.notional_usd:,.0f}"
+    if size.pair is None:
+        return f"{label}｜—"
+    return f"{label}｜淨資本 APR：{_apr(size.pair.net_fixed_apr_on_capital)}"
+
+
 def _duration_text(minutes: int) -> str:
     minutes = max(0, minutes)
     if minutes < 60:
@@ -91,9 +118,65 @@ def _duration_text(minutes: int) -> str:
 
 
 def format_opportunity_message(alert: AlertMessage) -> str:
-    if alert.severity not in {"NORMAL", "URGENT"}:
-        raise ValueError("severity must be NORMAL or URGENT")
-    heading = "🟠 Boros 套利｜歷史前 5%" if alert.severity == "NORMAL" else "🔴 Boros 極佳套利｜歷史前 1%"
+    historical_severity = alert.severity if alert.severity in {"NORMAL", "URGENT"} else None
+    high_yield_classification = alert.high_yield_classification
+    if high_yield_classification is None and alert.severity in {"HIGH_YIELD", "EXCEPTIONAL"}:
+        high_yield_classification = alert.severity
+    if historical_severity is None and high_yield_classification is None:
+        raise ValueError("an historical or high-yield classification is required")
+
+    if high_yield_classification is not None:
+        historical_text = ""
+        if historical_severity is not None:
+            historical_value = (
+                None
+                if alert.primary.benchmark is None
+                else alert.primary.benchmark.percentile_90d
+            )
+            historical_text = f"｜歷史 {_percentile(historical_value)}"
+        heading = (
+            "🔥 EXCEPTIONAL" if high_yield_classification == "EXCEPTIONAL" else "🔥 HIGH YIELD"
+        ) + historical_text
+        primary_pair = alert.primary.pair
+        reference_pair = None if alert.reference is None else alert.reference.pair
+        dte_seconds = alert.dte_seconds
+        if dte_seconds is None and primary_pair is not None:
+            dte_seconds = primary_pair.seconds_to_maturity
+        dte_days = 0 if dte_seconds is None else max(0, math.ceil(dte_seconds / 86400))
+        lines = [
+            heading,
+            "",
+            f"{alert.asset}｜{_display_venue(alert.short_venue)} → {_display_venue(alert.long_venue)}",
+            f"到期：{alert.maturity.isoformat()}｜DTE {dte_days} 天",
+            "",
+            "Limit + Hedge（掛單成交未保證）",
+            f"淨資本 APR：{_apr(None if primary_pair is None else primary_pair.net_fixed_apr_on_capital)}",
+            "",
+            "立即成交參考",
+            f"淨資本 APR：{_apr(None if reference_pair is None else reference_pair.net_fixed_apr_on_capital)}",
+            "",
+            f"單期資本報酬：{_pair_return(primary_pair)}",
+            f"預估淨收益：${_money(None if primary_pair is None else primary_pair.est_profit_usd, signed=True)}",
+            f"模型最低資本：${_money(None if primary_pair is None else primary_pair.capital_usd)}",
+            f"有效槓桿：{('—' if primary_pair is None or primary_pair.effective_leverage is None else f'{primary_pair.effective_leverage:.2f}x')}",
+            "",
+            "容量",
+            *(_high_yield_size_line(size) for size in alert.sizes),
+        ]
+        primary_benchmark = alert.primary.benchmark
+        if primary_benchmark is not None:
+            lines.extend(
+                [
+                    "",
+                    f"90D：{_percentile(primary_benchmark.percentile_90d)}",
+                    f"30D：{_percentile(primary_benchmark.percentile_30d)}",
+                    f"全歷史：{_percentile(primary_benchmark.percentile_lifetime)}",
+                ]
+            )
+        return "\n".join(lines)
+
+    assert historical_severity is not None
+    heading = "🟠 Boros 套利｜歷史前 5%" if historical_severity == "NORMAL" else "🔴 Boros 極佳套利｜歷史前 1%"
     primary_pair = alert.primary.pair
     primary_benchmark = alert.primary.benchmark
     lines = [
@@ -155,12 +238,12 @@ def format_opportunity_message(alert: AlertMessage) -> str:
     )
     if p95_minutes > 0:
         lines.extend(["", f"前 5% 已持續：{_duration_text(p95_minutes)}"])
-        if alert.severity == "URGENT":
+        if historical_severity == "URGENT":
             lines.append("本機狀態：剛進入歷史前 1%")
         else:
             lines.append("本機狀態：已在歷史前 5%")
     else:
-        status = "5%" if alert.severity == "NORMAL" else "1%"
+        status = "5%" if historical_severity == "NORMAL" else "1%"
         lines.extend(["", f"本機狀態：剛進入歷史前 {status}"])
     return "\n".join(lines)
 
