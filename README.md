@@ -112,6 +112,21 @@ read-only research data using the production visualization notionals
 Boros fixed-rate executable spread, not CrossEx net APR. The existing APR
 Explorer remains at `site/index.html`.
 
+### Phase 4A Market Radar
+
+Build the Radar payload using the existing historical DuckDB and the current,
+read-only CrossEx proxy:
+
+```bash
+# CrossEx local API must be running for current proxy economics.
+python3 build_market_radar_data.py
+
+python3 -m http.server 8765
+# open http://127.0.0.1:8765/site/radar.html
+```
+
+Radar is historical research, not live opportunity economics. DTE uses current CrossEx cost/capital proxy. Explorer retains all historical DTE data.
+
 ### Phase 3 read-only live monitor
 
 The Phase 3 companion reads only `GET /api/opportunities` from the local
