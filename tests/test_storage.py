@@ -94,6 +94,50 @@ def asset_price_rows():
     ]
 
 
+def opportunity_rows():
+    common = {
+        "asset": "HYPE",
+        "maturity": date(2026, 9, 25),
+        "dte_days": 32,
+        "token_id": 3,
+        "short_market_id": 155,
+        "short_venue": "HYPERLIQUID",
+        "long_market_id": 201,
+        "long_venue": "BYBIT",
+        "notional_usd": 2_000.0,
+        "short_bid_vwap_apr": 0.109,
+        "long_ask_vwap_apr": 0.062,
+        "short_top_bid_apr": 0.109,
+        "long_top_ask_apr": 0.062,
+        "top_of_book_spread_apr": 0.047,
+        "short_impact_apr": 0.0,
+        "long_impact_apr": 0.0,
+        "short_filled_usd": 2_000.0,
+        "long_filled_usd": 2_000.0,
+        "short_snapshot_age_sec": 120,
+        "long_snapshot_age_sec": 180,
+        "short_price_age_sec": 60,
+        "long_price_age_sec": 240,
+    }
+    return [
+        {
+            **common,
+            "timestamp": 1_787_443_200,
+            "executable_spread_apr": 0.047,
+            "fully_executable": True,
+            "invalid_reason": None,
+        },
+        {
+            **common,
+            "timestamp": 1_787_443_500,
+            "executable_spread_apr": None,
+            "fully_executable": False,
+            "invalid_reason": "long_depth_insufficient",
+            "long_filled_usd": 1_500.0,
+        },
+    ]
+
+
 def test_parquet_roundtrip_and_duckdb_view(tmp_path):
     parquet_root = tmp_path / "parquet"
     database_path = tmp_path / "boros.duckdb"
@@ -135,6 +179,7 @@ def test_catalog_exposes_all_views_without_importing_parquet_as_tables(tmp_path)
         "asset_prices",
         "markets",
         "assets",
+        "executable_opportunities",
     }
     with duckdb.connect(str(database_path), read_only=True) as connection:
         actual_views = {
@@ -146,6 +191,49 @@ def test_catalog_exposes_all_views_without_importing_parquet_as_tables(tmp_path)
         }
         assert expected_views <= actual_views
         assert connection.execute("SELECT count(*) FROM funding_rates").fetchone() == (0,)
+
+
+def test_executable_opportunities_round_trip_and_rebuild_is_idempotent(tmp_path):
+    parquet_root = tmp_path / "parquet"
+    database_path = tmp_path / "boros.duckdb"
+    rows = opportunity_rows()
+
+    dataset_path = write_dataset(rows, "executable_opportunities", parquet_root)
+    build_duckdb_catalog(parquet_root, database_path)
+    write_dataset(rows, "executable_opportunities", parquet_root)
+    build_duckdb_catalog(parquet_root, database_path)
+
+    assert list(dataset_path.glob("asset=HYPE/year=*/month=*/*.parquet"))
+
+    with duckdb.connect(str(database_path), read_only=True) as connection:
+        assert connection.execute(
+            """
+            SELECT
+                timestamp,
+                short_venue,
+                long_venue,
+                notional_usd,
+                executable_spread_apr,
+                fully_executable,
+                invalid_reason
+            FROM executable_opportunities
+            ORDER BY timestamp
+            """
+        ).fetchall() == [
+            (1_787_443_200, "HYPERLIQUID", "BYBIT", 2_000.0, 0.047, True, None),
+            (
+                1_787_443_500,
+                "HYPERLIQUID",
+                "BYBIT",
+                2_000.0,
+                None,
+                False,
+                "long_depth_insufficient",
+            ),
+        ]
+        assert connection.execute(
+            "SELECT count(*) FROM executable_opportunities"
+        ).fetchone() == (2,)
 
 
 def test_asset_prices_round_trip_partition_and_catalog_rebuild(tmp_path):

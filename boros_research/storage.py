@@ -114,6 +114,36 @@ CANONICAL_SCHEMAS: dict[str, pa.Schema] = {
         ("year", pa.string()),
         ("month", pa.string()),
     ),
+    "executable_opportunities": _schema(
+        ("timestamp", pa.int64()),
+        ("asset", pa.string()),
+        ("maturity", pa.date32()),
+        ("dte_days", pa.int64()),
+        ("token_id", pa.int64()),
+        ("short_market_id", pa.int64()),
+        ("short_venue", pa.string()),
+        ("long_market_id", pa.int64()),
+        ("long_venue", pa.string()),
+        ("notional_usd", pa.float64()),
+        ("short_bid_vwap_apr", pa.float64()),
+        ("long_ask_vwap_apr", pa.float64()),
+        ("executable_spread_apr", pa.float64()),
+        ("short_top_bid_apr", pa.float64()),
+        ("long_top_ask_apr", pa.float64()),
+        ("top_of_book_spread_apr", pa.float64()),
+        ("short_impact_apr", pa.float64()),
+        ("long_impact_apr", pa.float64()),
+        ("short_filled_usd", pa.float64()),
+        ("long_filled_usd", pa.float64()),
+        ("fully_executable", pa.bool_()),
+        ("invalid_reason", pa.string()),
+        ("short_snapshot_age_sec", pa.int64()),
+        ("long_snapshot_age_sec", pa.int64()),
+        ("short_price_age_sec", pa.int64()),
+        ("long_price_age_sec", pa.int64()),
+        ("year", pa.string()),
+        ("month", pa.string()),
+    ),
     "markets": _schema(
         ("market_id", pa.int64()),
         ("token_id", pa.int64()),
@@ -142,6 +172,7 @@ PARTITION_COLUMNS: dict[str, tuple[str, ...]] = {
     "ohlcv_5m": ("asset", "year", "month"),
     "order_books_5m": ("asset", "year", "month"),
     "asset_prices": ("asset", "year", "month"),
+    "executable_opportunities": ("asset", "year", "month"),
     "markets": (),
     "assets": (),
 }
@@ -160,6 +191,7 @@ _TIMESTAMP_FIELD = {
     "ohlcv_5m": "period_start_timestamp",
     "order_books_5m": "grid_timestamp",
     "asset_prices": "timestamp",
+    "executable_opportunities": "timestamp",
 }
 
 
@@ -291,6 +323,8 @@ def _quote_identifier(identifier: str) -> str:
 
 
 def _duckdb_type(data_type: pa.DataType) -> str:
+    if pa.types.is_boolean(data_type):
+        return "BOOLEAN"
     if pa.types.is_int64(data_type):
         return "BIGINT"
     if pa.types.is_float64(data_type):
