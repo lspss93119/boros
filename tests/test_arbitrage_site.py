@@ -193,6 +193,93 @@ def test_production_arbitrage_data_has_no_true_market_ambiguity():
     assert sum(len(values) > 1 for values in groups.values()) == 0
 
 
+def test_arbitrage_market_filter_binding_supports_non_ambiguous_render():
+    html = (ROOT / "site" / "arbitrage.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "site" / "arbitrage.js").read_text(encoding="utf-8")
+    assert 'id="marketFilter"' in html
+    assert 'marketFilter: document.getElementById("marketFilter")' in javascript
+    assert "el.marketFilter" in javascript
+    assert shutil.which("node") is not None, "Node.js is required for the DOM binding regression"
+
+    node_script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync("site/arbitrage.js", "utf8");
+const end = source.lastIndexOf("\nload();");
+const nodes = new Map();
+function node(id) {
+  return {
+    id,
+    value: "",
+    hidden: false,
+    innerHTML: "",
+    textContent: "",
+    children: [],
+    classList: {toggle() {}},
+    appendChild(child) { this.children.push(child); },
+    addEventListener() {},
+  };
+}
+[
+  "pageTitle", "pageSubtitle", "languageToggle", "assetLabel", "directionLabel",
+  "expirationLabel", "marketLabel", "notionalLabel", "filterBar", "assetSelect",
+  "directionSelect", "expirationSelect", "marketFilter", "marketSelect", "notionalSelect",
+  "kpis", "historyTitle", "historySubtitle", "historyNote", "spreadTab", "percentileTab",
+  "spreadChart", "distributionTitle", "distributionSubtitle", "distributionChart",
+  "distributionMeta", "notionalTitle", "notionalSubtitle", "notionalComparisonBody",
+  "leaderboardTitle", "leaderboardSubtitle", "leaderboardBody", "arbitrageApp",
+].forEach(id => nodes.set(id, node(id)));
+const documentStub = {
+  documentElement: {lang: "en"},
+  getElementById(id) { return nodes.get(id); },
+  createElement(tag) { return node(tag); },
+};
+const windowStub = {
+  location: {search: ""},
+  devicePixelRatio: 1,
+  addEventListener() {},
+};
+const structures = [
+  {id: "btc-feb", asset: "BTC", tokenId: 1, maturity: "2026-02-27", shortVenue: "HYPERLIQUID", longVenue: "BINANCE", shortMarketId: 49, longMarketId: 48},
+  {id: "btc-mar", asset: "BTC", tokenId: 1, maturity: "2026-03-27", shortVenue: "HYPERLIQUID", longVenue: "BINANCE", shortMarketId: 67, longMarketId: 68},
+];
+const script = `${source.slice(0, end)}
+state.data = {structures};
+state.asset = "BTC";
+state.direction = "HYPERLIQUID|BINANCE";
+state.expiration = "2026-02-27";
+populateFilters();
+JSON.stringify({
+  bound: el.marketFilter === nodes.get("marketFilter"),
+  hidden: el.marketFilter.hidden,
+  directionValues: [...el.direction.children].map(option => option.value),
+  expirationValues: [...el.expiration.children].map(option => option.value),
+  notionalValues: [...el.notional.children].map(option => option.value),
+})`;
+process.stdout.write(vm.runInNewContext(script, {
+  document: documentStub,
+  window: windowStub,
+  URLSearchParams,
+  structures,
+  nodes,
+  console,
+}));
+'''
+    result = subprocess.run(
+        ["node", "-e", node_script],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    output = json.loads(result.stdout)
+    assert output["bound"] is True
+    assert output["hidden"] is True
+    assert output["directionValues"] == ["HYPERLIQUID|BINANCE"]
+    assert output["expirationValues"] == ["2026-02-27", "2026-03-27"]
+    assert output["notionalValues"] == [10000, 25000, 50000]
+
+
 def test_apr_explorer_uses_taiwan_traditional_chinese():
     javascript = (ROOT / "site" / "app.js").read_text(encoding="utf-8")
     chinese_copy = javascript.split("  zh: {", 1)[1].split("\n  },\n};", 1)[0]

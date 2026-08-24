@@ -19,6 +19,7 @@ const el = {
   assetLabel: document.getElementById("assetLabel"),
   directionLabel: document.getElementById("directionLabel"),
   expirationLabel: document.getElementById("expirationLabel"),
+  marketFilter: document.getElementById("marketFilter"),
   marketLabel: document.getElementById("marketLabel"),
   notionalLabel: document.getElementById("notionalLabel"),
   filterBar: document.getElementById("filterBar"),
