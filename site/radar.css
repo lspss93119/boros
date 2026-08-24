@@ -1,0 +1,41 @@
+#radarApp .radar-controls {
+  grid-template-columns: minmax(280px, 420px);
+}
+
+#radarApp .radar-controls > div {
+  display: grid;
+  gap: 5px;
+}
+
+#radarApp .radar-controls span {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+#radarApp .radar-table {
+  min-width: 920px;
+}
+
+#radarApp .radar-state {
+  color: var(--muted);
+  padding: 14px 0 0;
+  text-align: center;
+}
+
+#radarApp .radar-state[data-kind="error"] {
+  color: var(--red);
+}
+
+@media (max-width: 520px) {
+  #radarApp .radar-controls {
+    grid-template-columns: 1fr;
+  }
+
+  #radarApp .topbar {
+    flex-direction: column;
+  }
+
+  #radarApp .top-actions {
+    justify-content: flex-start;
+  }
+}

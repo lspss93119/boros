@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>市場雷達</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./radar.css">
+</head>
+<body>
+  <div id="radarApp">
+    <header class="topbar">
+      <div>
+        <h1 id="pageTitle">市場雷達</h1>
+        <p id="pageSubtitle">以過去 90 天資料整理各資產的利差與方向。</p>
+      </div>
+      <div class="top-actions">
+        <a class="ghost-link" href="./index.html">APR Explorer</a>
+        <a class="ghost-link" href="./arbitrage.html">歷史套利研究</a>
+        <button id="languageToggle" type="button">English</button>
+      </div>
+    </header>
+
+    <section class="filters radar-controls" aria-label="Market Radar controls">
+      <div>
+        <span id="notionalLabel">名目金額</span>
+        <div class="segmented radar-notionals" role="group" aria-label="名目金額">
+          <button data-notional="10000" type="button">$10,000</button>
+          <button data-notional="25000" type="button">$25,000</button>
+          <button data-notional="50000" type="button">$50,000</button>
+        </div>
+      </div>
+    </section>
+
+    <main>
+      <section class="panel">
+        <div class="panel-title">
+          <div>
+            <h2 id="tableTitle">90 天市場摘要</h2>
+            <p id="tableSubtitle">選擇名目金額後，依資產字母排序。</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="radar-table">
+            <thead>
+              <tr>
+                <th id="assetHead">資產</th>
+                <th id="normalDirectionHead">常態最佳方向</th>
+                <th id="medianSpreadHead">90天中位利差</th>
+                <th id="burstDirectionHead">爆發最佳方向</th>
+                <th id="p95Head">90天 P95</th>
+                <th id="highVenueHead">常高利率 Venue</th>
+                <th id="lowVenueHead">常低利率 Venue</th>
+                <th id="dteHead">有效 DTE</th>
+              </tr>
+            </thead>
+            <tbody id="radarBody"></tbody>
+          </table>
+        </div>
+        <p class="radar-state" id="radarState" role="status"></p>
+      </section>
+
+      <section class="panel notes" aria-labelledby="notesTitle">
+        <div class="panel-title">
+          <div>
+            <h2 id="notesTitle">說明</h2>
+          </div>
+        </div>
+        <p id="proxyNote">DTE 係依目前 CrossEx 成本/資本模型作為歷史代理估算；不是歷史實際交易成本。</p>
+        <p id="availabilityNote">沒有可用資料的欄位會顯示「—」。</p>
+      </section>
+    </main>
+  </div>
+  <script src="./radar.js"></script>
+</body>
+</html>
