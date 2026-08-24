@@ -420,12 +420,21 @@ def _venue_winners(
             FROM group_results
             WHERE winner IS NOT NULL
             GROUP BY asset, notional_usd, winner
-        ), ranked_wins AS (
-            SELECT
-                *,
-                RANK() OVER (PARTITION BY asset, notional_usd ORDER BY win_count DESC) AS win_rank,
-                LEAD(win_count) OVER (PARTITION BY asset, notional_usd ORDER BY win_count DESC) AS next_win_count
+        ), best_win_counts AS (
+            SELECT asset, notional_usd, MAX(win_count) AS max_win_count
             FROM win_counts
+            GROUP BY asset, notional_usd
+        ), winner_choices AS (
+            SELECT
+                wins.asset,
+                wins.notional_usd,
+                CASE WHEN COUNT(*) = 1 THEN MIN(wins.winner) END AS venue
+            FROM win_counts wins
+            JOIN best_win_counts best
+              ON best.asset = wins.asset
+             AND best.notional_usd = wins.notional_usd
+             AND best.max_win_count = wins.win_count
+            GROUP BY wins.asset, wins.notional_usd
         )
         SELECT
             counts.asset,
@@ -433,15 +442,12 @@ def _venue_winners(
             counts.comparison_count,
             CASE
                 WHEN counts.comparison_count < {MIN_VENUE_COMPARISONS} THEN NULL
-                WHEN wins.win_rank = 1 AND (wins.next_win_count IS NULL OR wins.win_count <> wins.next_win_count)
-                    THEN wins.winner
-                ELSE NULL
+                ELSE choices.venue
             END AS venue
         FROM comparison_counts counts
-        LEFT JOIN ranked_wins wins
-          ON wins.asset = counts.asset
-         AND wins.notional_usd = counts.notional_usd
-         AND wins.win_rank = 1
+        LEFT JOIN winner_choices choices
+          ON choices.asset = counts.asset
+         AND choices.notional_usd = counts.notional_usd
         """,
     )
 

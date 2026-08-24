@@ -407,3 +407,110 @@ def test_radar_counts_fair_venue_winners_once_per_group_and_keeps_ties_unknown(
     )
 
     assert _rows_by_key(tied)[("HYPE", 10_000)]["highVenue"] is None
+
+
+def test_radar_returns_no_high_venue_for_an_exact_total_win_tie(connection):
+    """Catches selecting a venue from unordered equal total-win SQL rows."""
+    for market_id, venue in ((1, "HYPERLIQUID"), (2, "BYBIT"), (3, "BINANCE")):
+        _add_market(connection, market_id, venue)
+    for index in range(50):
+        timestamp = ANCHOR - index
+        hyperliquid_bid, bybit_bid = (0.10, 0.09) if index < 25 else (0.09, 0.10)
+        for short_id, short_venue, short_bid, long_id, long_venue in (
+            (1, "HYPERLIQUID", hyperliquid_bid, 3, "BINANCE"),
+            (2, "BYBIT", bybit_bid, 3, "BINANCE"),
+            (3, "BINANCE", 0.08, 1, "HYPERLIQUID"),
+        ):
+            _add_opportunity(
+                connection,
+                timestamp=timestamp,
+                short_market_id=short_id,
+                short_venue=short_venue,
+                long_market_id=long_id,
+                long_venue=long_venue,
+                short_bid=short_bid,
+                long_ask=0.01,
+                spread=short_bid - 0.01,
+            )
+
+    payload = _radar_module().build_radar_payload(
+        connection,
+        {10_000: {"HYPE": ProxyEconomics(0, 100, 1, 1)}},
+        generated_at="2026-08-24T00:00:00Z",
+    )
+    row = _rows_by_key(payload)[("HYPE", 10_000)]
+
+    assert row["highVenue"] is None
+    assert row["highVenueComparisonCount"] == 50
+    assert _radar_module()._venue_winners(connection, "high") == [
+        {
+            "asset": "HYPE",
+            "notional_usd": 10_000.0,
+            "comparison_count": 50,
+            "venue": None,
+        }
+    ]
+
+
+def test_radar_excludes_same_venue_conflicting_quotes_from_comparisons(connection):
+    """Catches treating inconsistent same-venue quotes as independent valid evidence."""
+    for market_id, venue in ((1, "HYPERLIQUID"), (2, "BYBIT"), (3, "BINANCE")):
+        _add_market(connection, market_id, venue)
+    for index in range(50):
+        timestamp = ANCHOR - index
+        for short_id, short_venue, short_bid, long_id, long_venue in (
+            (1, "HYPERLIQUID", 0.20, 2, "BYBIT"),
+            (1, "HYPERLIQUID", 0.15, 3, "BINANCE"),
+            (2, "BYBIT", 0.08, 1, "HYPERLIQUID"),
+            (3, "BINANCE", 0.07, 1, "HYPERLIQUID"),
+        ):
+            _add_opportunity(
+                connection,
+                timestamp=timestamp,
+                short_market_id=short_id,
+                short_venue=short_venue,
+                long_market_id=long_id,
+                long_venue=long_venue,
+                short_bid=short_bid,
+                long_ask=0.01,
+                spread=short_bid - 0.01,
+            )
+
+    payload = _radar_module().build_radar_payload(
+        connection,
+        {10_000: {"HYPE": ProxyEconomics(0, 100, 1, 1)}},
+        generated_at="2026-08-24T00:00:00Z",
+    )
+    row = _rows_by_key(payload)[("HYPE", 10_000)]
+
+    assert row["highVenue"] == "BYBIT"
+    assert row["highVenueComparisonCount"] == 50
+
+
+def test_radar_uses_latest_past_maturity_when_selected_direction_has_no_future_one(
+    connection,
+):
+    """Catches leaving drilldown empty when eligible observations predate the anchor."""
+    _add_market(connection, 1, "HYPERLIQUID", maturity=PAST_MATURITY)
+    _add_market(connection, 2, "BYBIT", maturity=PAST_MATURITY)
+    for index in range(50):
+        _add_opportunity(
+            connection,
+            timestamp=ANCHOR - index,
+            short_market_id=1,
+            short_venue="HYPERLIQUID",
+            long_market_id=2,
+            long_venue="BYBIT",
+            spread=0.10,
+            maturity=PAST_MATURITY,
+        )
+
+    payload = _radar_module().build_radar_payload(
+        connection,
+        {10_000: {"HYPE": ProxyEconomics(0, 100, 1, 1)}},
+        generated_at="2026-08-24T00:00:00Z",
+    )
+    row = _rows_by_key(payload)[("HYPE", 10_000)]
+
+    assert row["normal"]["drilldownMaturity"] == "2026-08-20"
+    assert row["burst"]["drilldownMaturity"] == "2026-08-20"
