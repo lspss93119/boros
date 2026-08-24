@@ -7,6 +7,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
+import boros_research.build as build_module
 from boros_research.build import BuildPaths, _validate_book_market, run_build
 from boros_research.cli import main as cli_main
 from boros_research.market_metadata import MarketInfo
@@ -282,6 +283,67 @@ def test_official_symbol_aliases_match_canonical_market_assets(slug, asset):
     )
 
     assert _validate_book_market(slug, parsed, {market.market_id: market}, set()) == market
+
+
+def test_order_book_ingestion_aligns_each_market_before_reading_next_market(monkeypatch):
+    first_path = (
+        "order-book/1-BYBIT-HYPEUSDT-25SEP2026/combined_0.0001/2026-08.ndjson.zip"
+    )
+    second_path = (
+        "order-book/2-HYPERLIQUID-HYPEUSDT-25SEP2026/combined_0.0001/2026-08.ndjson.zip"
+    )
+    selected = [
+        {"path": first_path, "size": 1},
+        {"path": second_path, "size": 1},
+    ]
+    markets = {
+        1: MarketInfo(
+            market_id=1,
+            token_id=3,
+            venue="BYBIT",
+            asset="HYPE",
+            maturity=datetime.fromtimestamp(
+                MATURITY_TIMESTAMP, tz=timezone.utc
+            ).date(),
+            symbol="BYBIT-HYPEUSDT-25SEP2026",
+            name="Bybit HYPE",
+        ),
+        2: MarketInfo(
+            market_id=2,
+            token_id=3,
+            venue="HYPERLIQUID",
+            asset="HYPE",
+            maturity=datetime.fromtimestamp(
+                MATURITY_TIMESTAMP, tz=timezone.utc
+            ).date(),
+            symbol="HYPERLIQUID-HYPEUSDT-25SEP2026",
+            name="Hyperliquid HYPE",
+        ),
+    }
+    events = []
+
+    def fake_iter(path):
+        market_id = 1 if "1-BYBIT" in str(path) else 2
+        events.append(("parse", market_id))
+        yield {
+            "timestamp": BASE_TIMESTAMP,
+            "blockNumber": market_id,
+            "long": [{"rate": 0.1, "size": 1}],
+            "short": [{"rate": 0.2, "size": 1}],
+        }
+
+    original_align = build_module.align_snapshots_to_grid
+
+    def tracked_align(snapshots, grid_start, grid_end):
+        events.append(("align", len([event for event in events if event[0] == "align"]) + 1))
+        return original_align(snapshots, grid_start, grid_end)
+
+    monkeypatch.setattr(build_module, "iter_ndjson_zip", fake_iter)
+    monkeypatch.setattr(build_module, "align_snapshots_to_grid", tracked_align)
+
+    build_module._book_rows(selected, Path("unused"), markets, set())
+
+    assert events.index(("align", 1)) < events.index(("parse", 2))
 
 
 def test_run_build_reconstructs_spreads_and_quality_report_offline(tmp_path):

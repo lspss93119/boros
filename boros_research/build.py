@@ -373,15 +373,12 @@ def _book_rows(
     missing_ids: set[int],
     physical_targets: Mapping[str, Path] | None = None,
 ) -> list[dict[str, Any]]:
-    snapshots: dict[
-        int, dict[tuple[int, int | None], tuple[OrderBookSnapshot, str]]
-    ] = defaultdict(dict)
-
     book_entries = [
         entry
         for entry in selected
         if _path_text(entry).startswith("order-book/")
     ]
+    entries_by_market: dict[int, list[tuple[str, Mapping[str, Any]]]] = defaultdict(list)
     for entry in sorted(book_entries, key=_path_text):
         source_path = _path_text(entry)
         parts = PurePosixPath(source_path).parts
@@ -389,24 +386,32 @@ def _book_rows(
             raise ValueError(f"{source_path}: expected combined_0.0001 order-book archive")
         market_slug = parse_market_slug(parts[1])
         market = _validate_book_market(source_path, market_slug, markets, missing_ids)
-        for raw in iter_ndjson_zip(_target_for_entry(raw_root, entry, physical_targets)):
-            snapshot = parse_combined_snapshot(raw)
-            identity = (snapshot.timestamp, snapshot.block_number)
-            previous = snapshots[market.market_id].get(identity)
-            if previous is not None:
-                if previous[0] != snapshot:
-                    raise ValueError(
-                        f"{source_path}: conflicting duplicate order-book snapshot "
-                        f"for market {market.market_id} at {identity}"
-                    )
-                continue
-            snapshots[market.market_id][identity] = (snapshot, source_path)
+        entries_by_market[market.market_id].append((source_path, entry))
 
     rows: list[dict[str, Any]] = []
-    for market_id in sorted(snapshots):
+    for market_id in sorted(entries_by_market):
         market = markets[market_id]
+        snapshots: dict[
+            tuple[int, int | None], tuple[OrderBookSnapshot, str]
+        ] = {}
+        for source_path, entry in entries_by_market[market_id]:
+            for raw in iter_ndjson_zip(
+                _target_for_entry(raw_root, entry, physical_targets)
+            ):
+                snapshot = parse_combined_snapshot(raw)
+                identity = (snapshot.timestamp, snapshot.block_number)
+                previous = snapshots.get(identity)
+                if previous is not None:
+                    if previous[0] != snapshot:
+                        raise ValueError(
+                            f"{source_path}: conflicting duplicate order-book snapshot "
+                            f"for market {market.market_id} at {identity}"
+                        )
+                    continue
+                snapshots[identity] = (snapshot, source_path)
+
         values = sorted(
-            snapshots[market_id].values(),
+            snapshots.values(),
             key=lambda item: (
                 item[0].timestamp,
                 -1 if item[0].block_number is None else item[0].block_number,
