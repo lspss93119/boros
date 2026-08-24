@@ -387,7 +387,9 @@ def _book_rows(
         grid_start = (
             (first_timestamp + SAMPLE_INTERVAL_SEC - 1) // SAMPLE_INTERVAL_SEC
         ) * SAMPLE_INTERVAL_SEC
-        grid_end = (last_timestamp // SAMPLE_INTERVAL_SEC) * SAMPLE_INTERVAL_SEC
+        grid_end = (
+            (last_timestamp + SAMPLE_INTERVAL_SEC - 1) // SAMPLE_INTERVAL_SEC
+        ) * SAMPLE_INTERVAL_SEC
         if grid_start > grid_end:
             continue
         aligned = align_snapshots_to_grid(

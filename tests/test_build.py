@@ -342,6 +342,41 @@ def test_run_build_reconstructs_spreads_and_quality_report_offline(tmp_path):
     assert result.report.opportunity_row_count == 24
 
 
+def test_build_keeps_final_off_grid_orderbook_snapshot(tmp_path):
+    payloads = make_fixture_archive()
+    off_grid_timestamp = BASE_TIMESTAMP + 120
+    payloads[
+        "order-book/155-HYPERLIQUID-HYPEUSDT-25SEP2026/combined_0.0001/2026-08.ndjson.zip"
+    ] = combined_payload(off_grid_timestamp, 0.109, 0.115, 2_000)
+    payloads[
+        "order-book/201-BYBIT-HYPEUSDT-25SEP2026/combined_0.0001/2026-08.ndjson.zip"
+    ] = combined_payload(off_grid_timestamp, 0.058, 0.062, 2_000)
+    manifest = make_manifest(payloads)
+    counters = {"manifest": 0, "archive": 0, "indicator": 0, "metadata_calls": []}
+
+    paths, _ = run_fixture_build(tmp_path, payloads, manifest, counters)
+
+    assert query_one(
+        paths.duckdb_path,
+        """
+        SELECT grid_timestamp, snapshot_timestamp, snapshot_age_sec, status
+        FROM order_books_5m
+        WHERE market_id = 155
+        """,
+    ) == (BASE_TIMESTAMP + 300, off_grid_timestamp, 180, "ok")
+    assert query_one(
+        paths.duckdb_path,
+        """
+        SELECT executable_spread_apr
+        FROM executable_opportunities
+        WHERE short_venue = 'HYPERLIQUID'
+          AND long_venue = 'BYBIT'
+          AND asset = 'HYPE'
+          AND notional_usd = 2000
+        """,
+    ) == (0.047,)
+
+
 def test_second_build_is_idempotent_and_uses_raw_caches(tmp_path):
     payloads = make_fixture_archive()
     manifest = make_manifest(payloads)
