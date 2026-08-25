@@ -26,10 +26,29 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.11"
 
       - name: Build site data
         run: python3 build_site_data.py
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dashboard dependencies
+        run: npm ci --prefix dashboard
+
+      - name: Check dashboard types
+        run: npm run typecheck --prefix dashboard
+
+      - name: Test dashboard
+        run: npm test --prefix dashboard
+
+      - name: Build dashboard
+        run: npm run build --prefix dashboard
 
       - name: Disable Jekyll
         run: touch site/.nojekyll
