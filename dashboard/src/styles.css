@@ -29,7 +29,11 @@ h2 { font-size: 1.25rem; }
 .mode-pill, .badge { border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; }
 .mode-pill.live { color: var(--accent); border-color: #2b7e79; }
 .mode-pill.static { color: var(--warning); border-color: #795a36; }
-.kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.status-chip { border: 1px solid var(--line); border-radius: 999px; padding: 5px 9px; color: var(--muted); font-size: 0.75rem; }
+.status-ok.freshness-fresh, .freshness-fresh { color: var(--accent); border-color: #2b7e79; }
+.freshness-stale, .status-degraded { color: var(--warning); border-color: #795a36; }
+.freshness-offline, .status-unknown, .status-error, .status-invalid { color: var(--danger); border-color: #87404d; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .kpi, .panel { border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, transparent); border-radius: 16px; }
 .kpi { padding: 16px; }
 .kpi span { color: var(--muted); display: block; font-size: 0.78rem; }
@@ -53,6 +57,8 @@ summary { cursor: pointer; color: var(--accent); }
 .stale-note { display: block; color: var(--warning); font-size: 0.76rem; margin-top: 12px; }
 .disclosure { margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--accent); padding: 7px 10px; cursor: pointer; }
 .detail-panel { display: grid; gap: 8px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; color: var(--muted); font-size: 0.82rem; }
+.leg-list { display: grid; gap: 6px; padding-left: 12px; border-left: 2px solid var(--line); }
+.leg-row { color: var(--muted); }
 .healthy { color: var(--accent); }
 .warning { color: var(--warning); }
 .two-column { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }

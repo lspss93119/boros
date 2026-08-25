@@ -178,6 +178,29 @@ CrossEx `capitalUsd` is displayed as **modelled minimum capital**, and
 returns or a recommended position size. Live monitoring does not implement
 percentile scoring, grades, dashboards, or automated execution.
 
+### P5 unified dashboard
+
+Build the read-only React presentation locally and serve the complete site
+through the localhost dashboard bridge:
+
+```bash
+npm ci --prefix dashboard
+npm run typecheck --prefix dashboard
+npm test --prefix dashboard
+npm run build --prefix dashboard
+python3 -m boros_research.cli dashboard
+```
+
+Open `http://127.0.0.1:8765/`. Python monitors publish finite, atomic P1/P2
+snapshots; the dashboard only presents those snapshots and never recalculates
+financial thresholds. It exposes only localhost GET APIs and has no trade,
+close, roll, order, account, wallet, or execution controls.
+
+GitHub Pages remains static research mode: the Radar summary and links to the
+existing Historical APR, Radar, and Arbitrage Research pages work, while live
+opportunities, open positions, and system health intentionally say
+`Local monitor not connected`. Pages does not attempt to fetch localhost.
+
 ## Run
 
 ```bash

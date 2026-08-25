@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { QueryObserverOptions } from "@tanstack/react-query";
 import { dashboardFetch } from "./api";
-import type { HealthData, P1Data, PositionsData } from "./contracts";
+import type { HealthData, P1Data, PositionsData, RadarData } from "./contracts";
 
 export const LIVE_REFETCH_INTERVAL_MS = 10_000;
 
@@ -37,15 +37,6 @@ export function useDashboardPositions(enabled: boolean) {
     queryFn: async () => (await dashboardFetch<PositionsData>("/api/dashboard/positions")).data,
     ...liveQueryOptions(enabled),
   });
-}
-
-export interface RadarData {
-  generatedAt?: string;
-  historicalMaxTimestamp?: number;
-  notionals?: number[];
-  rows?: unknown[];
-  windowDays?: number;
-  [key: string]: unknown;
 }
 
 export const RADAR_PATH = "../data/boros_market_radar.json";

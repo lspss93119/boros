@@ -32,12 +32,39 @@ function statusText(sourceStatus: string | undefined, freshness: string | undefi
   return [sourceStatus ?? "offline", freshness ?? "offline"].join(" / ");
 }
 
+function StatusIndicator({
+  sourceStatus,
+  freshness,
+}: {
+  sourceStatus: string | undefined;
+  freshness: string | undefined;
+}) {
+  const sourceClass = (sourceStatus ?? "offline").toLowerCase();
+  const freshnessClass = (freshness ?? "offline").toLowerCase();
+  return (
+    <span
+      className={`status-chip status-${sourceClass} freshness-${freshnessClass}`}
+      data-freshness={freshnessClass}
+      data-source-status={sourceClass}
+    >
+      {statusText(sourceStatus, freshness)}
+    </span>
+  );
+}
+
 function signalEconomics(opportunity: LiveOpportunity): Economics | undefined {
   return opportunity.sizes.find((size) => size.signalSize)?.makerHedge;
 }
 
 function referenceEconomics(opportunity: LiveOpportunity): Economics | undefined {
   return opportunity.sizes.find((size) => size.signalSize)?.immediate;
+}
+
+function directionSummary(strategy: StrategySnapshot): string {
+  const directions = strategy.legs
+    .map((leg) => `${leg.venue} ${leg.side}`)
+    .filter(Boolean);
+  return directions.length > 0 ? directions.join(" → ") : "direction unavailable";
 }
 
 function LiveState({ text }: { text: string }) {
@@ -123,7 +150,7 @@ function PositionRow({ strategy }: { strategy: StrategySnapshot }) {
   return (
     <article className="data-row">
       <div className="row-main">
-        <div><strong>{strategy.base}</strong><span className="muted"> {strategy.strategyId}</span></div>
+        <div><strong>{strategy.base}</strong><span className="muted"> {directionSummary(strategy)} · {strategy.strategyId}</span></div>
         <span className={strategy.hedgeChecks.fullyHedged ? "healthy" : "warning"}>{strategy.hedgeChecks.fullyHedged ? "Fully hedged" : "Hedge warning"}</span>
       </div>
       <div className="metric-grid">
@@ -145,6 +172,13 @@ function PositionRow({ strategy }: { strategy: StrategySnapshot }) {
           <div><b>Attribution</b> {strategy.attribution.source ?? "—"} · confidence {percent(strategy.attribution.confidence)}</div>
           <div><b>Capital split</b> {JSON.stringify(strategy.capitalSplit ?? {})}</div>
           <div><b>Legs</b> {strategy.legs.length}</div>
+          <div className="leg-list">
+            {strategy.legs.map((leg, index) => (
+              <div className="leg-row" key={`${strategy.strategyId}-leg-${index}`}>
+                <b>{leg.kind}</b> {leg.venue} · {leg.side} · {leg.symbol ?? "symbol unavailable"} · net {money(leg.netUsd)} · PnL {money(leg.tradePnlUsd)} · fees {money(leg.feesUsd)}
+              </div>
+            ))}
+          </div>
           {strategy.warnings.length > 0 && <div className="warning">Diagnostics present: {strategy.warnings.length}</div>}
         </div>
       )}
@@ -158,6 +192,12 @@ export function App({ hostname = window.location.hostname }: AppProps) {
   const opportunities = useDashboardOpportunities(local);
   const positions = useDashboardPositions(local);
   const radar = useRadar();
+  const aggregateCapital = useMemo(() => {
+    const values = (positions.data?.strategies ?? [])
+      .map((item) => item.capitalUsd)
+      .filter((value): value is number => value != null);
+    return values.length > 0 ? values.reduce((total, value) => total + value, 0) : null;
+  }, [positions.data]);
   const radarSummary = useMemo(() => ({
     rows: radar.data?.rows?.length ?? 0,
     notionals: radar.data?.notionals ?? [],
@@ -177,15 +217,16 @@ export function App({ hostname = window.location.hostname }: AppProps) {
         <div className="kpi"><span>Historical P95/P99</span><strong>{opportunities.data ? `${opportunities.data.counts.p95 ?? 0}/${opportunities.data.counts.p99 ?? 0}` : "—"}</strong></div>
         <div className="kpi"><span>Open strategies</span><strong>{positions.data?.strategies.length ?? "—"}</strong></div>
         <div className="kpi"><span>Fully hedged</span><strong>{positions.data ? positions.data.strategies.filter((item) => item.hedgeChecks.fullyHedged).length : "—"}</strong></div>
+        <div className="kpi"><span>Aggregate capital</span><strong>{money(aggregateCapital)}</strong></div>
       </section>
 
       <section className="panel" aria-labelledby="live-opportunities-heading">
-        <div className="section-heading"><div><p className="eyebrow">P1</p><h2 id="live-opportunities-heading">Live Opportunities</h2></div><span className="status-text">{statusText(opportunities.data?.sourceStatus, opportunities.data?.freshness)}</span></div>
+        <div className="section-heading"><div><p className="eyebrow">P1</p><h2 id="live-opportunities-heading">Live Opportunities</h2></div><StatusIndicator sourceStatus={opportunities.data?.sourceStatus} freshness={opportunities.data?.freshness} /></div>
         <Opportunities local={local} data={opportunities.data} isError={opportunities.isError} />
       </section>
 
       <section className="panel" aria-labelledby="open-positions-heading">
-        <div className="section-heading"><div><p className="eyebrow">P2</p><h2 id="open-positions-heading">Open Positions</h2></div><span className="status-text">{statusText(positions.data?.sourceStatus, positions.data?.freshness)}</span></div>
+        <div className="section-heading"><div><p className="eyebrow">P2</p><h2 id="open-positions-heading">Open Positions</h2></div><StatusIndicator sourceStatus={positions.data?.sourceStatus} freshness={positions.data?.freshness} /></div>
         <Positions local={local} data={positions.data} isError={positions.isError} />
       </section>
 
@@ -197,7 +238,7 @@ export function App({ hostname = window.location.hostname }: AppProps) {
 
         <section className="panel" aria-labelledby="health-heading">
           <div className="section-heading"><div><p className="eyebrow">OPERATIONS</p><h2 id="health-heading">System Health</h2></div><span className="status-text">{local ? (health.data?.status ?? "offline") : "offline"}</span></div>
-          {!local ? <LiveState text="Local monitor not connected" /> : <div className="health-list"><span>Process freshness <b>{health.data?.server ?? "—"}</b></span><span>P1 cycle <b>{health.data?.components.p1.cycleTimestamp ?? "—"}</b></span><span>P1 last good <b>{health.data?.components.p1.lastGoodTimestamp ?? "—"}</b></span><span>P2 primary / auxiliary <b>{health.data ? `${health.data.components.p2.status} / ${health.data.components.p2.freshness}` : "—"}</b></span></div>}
+          {!local ? <LiveState text="Local monitor not connected" /> : <div className="health-list"><span>Process freshness <b>{health.data?.server ?? "—"}</b></span><span>P1 cycle <b>{health.data?.components.p1.cycleTimestamp ?? "—"}</b></span><span>P1 last good <b>{health.data?.components.p1.lastGoodTimestamp ?? "—"}</b></span><span>P2 cycle <b>{health.data?.components.p2.cycleTimestamp ?? "—"}</b></span><span>P2 last good <b>{health.data?.components.p2.lastGoodTimestamp ?? "—"}</b></span><span>P2 primary / auxiliary <b>{health.data ? `${health.data.components.p2.status} / ${health.data.components.p2.freshness}` : "—"}</b></span></div>}
         </section>
       </div>
 

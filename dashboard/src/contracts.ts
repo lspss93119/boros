@@ -121,6 +121,15 @@ export interface HealthData {
   components: { p1: HealthComponent; p2: HealthComponent };
 }
 
+export interface RadarData {
+  generatedAt?: string;
+  historicalMaxTimestamp?: number;
+  notionals?: number[];
+  rows?: unknown[];
+  windowDays?: number;
+  [key: string]: unknown;
+}
+
 export type Freshness = "fresh" | "stale" | "offline";
 
 export interface ApiEnvelope<T> {
