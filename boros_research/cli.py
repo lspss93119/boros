@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -30,6 +31,15 @@ from .download import (
     refresh_manifest,
 )
 from .crossex_client import CrossExClient, MONITORED_NOTIONALS, validate_evm_address
+from .dashboard_snapshot import (
+    DashboardSnapshotError,
+    P1_DASHBOARD_SNAPSHOT,
+    P2_DASHBOARD_SNAPSHOT,
+    build_p1_snapshot,
+    build_p2_snapshot,
+    read_snapshot,
+    write_snapshot,
+)
 from .live_benchmark import HistoricalBenchmarkLookup
 from .manifest import select_archive_files
 from .monitor import LiveMonitor, render_cycle_summary, render_delivery_event
@@ -386,6 +396,58 @@ def _telegram_sender() -> TelegramClient | None:
     return TelegramClient(token, chat_id)
 
 
+def _dashboard_snapshot_path(default_path: Path, snapshot_dir: Path | None) -> Path:
+    if snapshot_dir is None:
+        return default_path
+    return Path(snapshot_dir) / default_path.name
+
+
+def _p1_dashboard_observer(
+    snapshot_dir: Path | None = None,
+    interval: int = 60,
+):
+    path = _dashboard_snapshot_path(P1_DASHBOARD_SNAPSHOT, snapshot_dir)
+
+    def publish(result, error):
+        try:
+            previous = read_snapshot(path, "p1")
+        except DashboardSnapshotError:
+            previous = None
+        snapshot = build_p1_snapshot(
+            result,
+            previous,
+            int(time.time()),
+            interval,
+            error=error,
+        )
+        write_snapshot(path, snapshot)
+
+    return publish
+
+
+def _p2_dashboard_observer(
+    snapshot_dir: Path | None = None,
+    interval: int = 60,
+):
+    path = _dashboard_snapshot_path(P2_DASHBOARD_SNAPSHOT, snapshot_dir)
+
+    def publish(result, error):
+        try:
+            previous = read_snapshot(path, "p2")
+        except DashboardSnapshotError:
+            previous = None
+        snapshot = build_p2_snapshot(
+            result,
+            previous,
+            int(time.time()),
+            interval,
+            error=error,
+        )
+        write_snapshot(path, snapshot)
+
+    return publish
+
+
 def _run_monitor_command(args: argparse.Namespace) -> int:
     client = CrossExClient(base_url=args.base_url, token_file=args.token_file)
     benchmark = HistoricalBenchmarkLookup(
@@ -407,6 +469,11 @@ def _run_monitor_command(args: argparse.Namespace) -> int:
             telegram_send=None if sender is None else sender.send_message,
             monitored_notionals=MONITORED_NOTIONALS,
             poll_interval_seconds=args.interval,
+            cycle_observer=(
+                None
+                if args.dry_run
+                else _p1_dashboard_observer(interval=args.interval)
+            ),
         )
         if not args.dry_run and sender is None:
             print("Telegram credentials missing; opportunity alerts will not be sent.")
@@ -446,6 +513,11 @@ def _run_positions_command(args: argparse.Namespace) -> int:
             address=address,
             telegram_send=None if sender is None else sender.send_message,
             poll_interval_seconds=args.interval,
+            cycle_observer=(
+                None
+                if args.dry_run
+                else _p2_dashboard_observer(interval=args.interval)
+            ),
         )
         if not args.dry_run and sender is None:
             print("Telegram credentials missing; position alerts will not be sent.")

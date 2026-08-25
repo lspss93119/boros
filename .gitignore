@@ -35,6 +35,12 @@ files.json
 raw_api/
 raw_indicators/
 data/
+# Local dashboard snapshots and atomic-write temporary files are runtime data.
+data/dashboard/
+
+# Frontend dependencies and the Pages build are generated locally/CI.
+dashboard/node_modules/
+site/dashboard/
 
 # One-off local analysis/scratch files. Keep the canonical processed CSVs
 # because the GitHub Pages workflow rebuilds `site/data/boros_apr_site_data.json`
