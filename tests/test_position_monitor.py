@@ -5,7 +5,6 @@ import threading
 from boros_research.position_models import Attribution, HedgeChecks, PositionsSnapshot, StrategySnapshot
 from boros_research.position_state import (
     HEDGE_WARNING,
-    NEW_STRATEGY,
     STRATEGY_DISAPPEARED,
     PositionStateStore,
 )

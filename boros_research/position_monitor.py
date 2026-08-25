@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import Any
 
 from .crossex_client import CrossExClient, validate_evm_address
 from .position_models import PositionsSnapshot, StrategySnapshot
@@ -83,7 +84,7 @@ class PositionMonitor:
         positions_success = False
         positions: PositionsSnapshot | None = None
         with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = {
+            futures: dict[Future[Any], str] = {
                 pool.submit(self.client.fetch_strategy, self.address): "strategy",
                 pool.submit(self.client.fetch_positions): "positions",
             }

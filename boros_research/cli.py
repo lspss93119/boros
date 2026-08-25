@@ -485,7 +485,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
-        return int(exc.code)
+        return exc.code if isinstance(exc.code, int) else 1
 
     if args.command is None:
         parser.print_help()
