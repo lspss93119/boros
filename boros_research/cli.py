@@ -29,10 +29,16 @@ from .download import (
     load_cached_manifest,
     refresh_manifest,
 )
-from .crossex_client import CrossExClient, MONITORED_NOTIONALS
+from .crossex_client import CrossExClient, MONITORED_NOTIONALS, validate_evm_address
 from .live_benchmark import HistoricalBenchmarkLookup
 from .manifest import select_archive_files
 from .monitor import LiveMonitor, render_cycle_summary, render_delivery_event
+from .position_monitor import (
+    PositionMonitor,
+    render_position_cycle_summary,
+)
+from .position_state import PositionStateStore
+from .position_telegram import render_position_delivery
 from .telegram import TelegramClient, telegram_test_message
 from .validation import render_report
 
@@ -277,6 +283,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="historical cohort minimum (default: 50)",
     )
 
+    positions = subparsers.add_parser(
+        "positions", help="read-only CrossEx open position monitor"
+    )
+    positions.add_argument(
+        "--address",
+        default=None,
+        help="EVM strategy address (overrides BOROS_ADDRESS)",
+    )
+    positions.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="evaluate and print position events without sending Telegram messages",
+    )
+    positions.add_argument(
+        "--once",
+        action="store_true",
+        help="run one polling cycle instead of the 60-second daemon",
+    )
+    positions.add_argument(
+        "--base-url",
+        default=os.environ.get("CROSSEX_BASE_URL", "http://127.0.0.1:6688"),
+        help="local CrossEx base URL (default: CROSSEX_BASE_URL or loopback:6688)",
+    )
+    positions.add_argument("--token-file", type=Path, default=None)
+    positions.add_argument(
+        "--state-path", type=Path, default=Path("data/position_monitor.sqlite3")
+    )
+    positions.add_argument(
+        "--interval",
+        type=_positive_int,
+        default=60,
+        help="poll interval seconds for daemon mode (default: 60)",
+    )
+
     subparsers.add_parser(
         "telegram-test", help="send one harmless Telegram connectivity test message"
     )
@@ -384,6 +424,47 @@ def _run_monitor_command(args: argparse.Namespace) -> int:
         state.close()
 
 
+def resolve_position_address(address: str | None) -> str:
+    candidate = address or os.environ.get("BOROS_ADDRESS")
+    if not candidate:
+        raise ValueError("set BOROS_ADDRESS or pass --address for positions monitoring")
+    return validate_evm_address(candidate)
+
+
+def _run_positions_command(args: argparse.Namespace) -> int:
+    address = resolve_position_address(args.address)
+    client = CrossExClient(base_url=args.base_url, token_file=args.token_file)
+    state = PositionStateStore(
+        ":memory:" if args.dry_run else args.state_path,
+        poll_interval_seconds=args.interval,
+    )
+    sender = _telegram_sender() if not args.dry_run else None
+    try:
+        monitor = PositionMonitor(
+            client=client,
+            state=state,
+            address=address,
+            telegram_send=None if sender is None else sender.send_message,
+            poll_interval_seconds=args.interval,
+        )
+        if not args.dry_run and sender is None:
+            print("Telegram credentials missing; position alerts will not be sent.")
+        if args.once:
+            result = monitor.run_once(dry_run=args.dry_run)
+            print(render_position_cycle_summary(result))
+            for message in result.messages:
+                print("\n" + message)
+            for delivery in result.delivery_events:
+                print(render_position_delivery(delivery.event, delivered=delivery.delivered))
+            for snapshot in result.snapshots:
+                print("\n" + snapshot)
+            return 0
+        monitor.run_forever(dry_run=args.dry_run)
+        return 0
+    finally:
+        state.close()
+
+
 def _run_telegram_test_command() -> int:
     sender = _telegram_sender()
     if sender is None:
@@ -418,6 +499,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_benchmark_command(args)
         if args.command == "monitor":
             return _run_monitor_command(args)
+        if args.command == "positions":
+            return _run_positions_command(args)
         if args.command == "telegram-test":
             return _run_telegram_test_command()
         parser.error(f"unknown command: {args.command}")
