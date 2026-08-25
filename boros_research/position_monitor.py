@@ -39,6 +39,8 @@ class PositionCycleResult:
     warnings: tuple[str, ...]
     delivery_events: tuple[PositionDeliveryEvent, ...]
     telegram_sent_count: int
+    strategy_snapshots: tuple[StrategySnapshot, ...] = ()
+    positions_snapshot: PositionsSnapshot | None = None
 
 
 def render_position_cycle_summary(result: PositionCycleResult) -> str:
@@ -64,6 +66,7 @@ class PositionMonitor:
         telegram_send: Callable[[str], None] | None,
         now_timestamp: Callable[[], int] | None = None,
         poll_interval_seconds: int = 60,
+        cycle_observer: Callable[[PositionCycleResult | None, str | None], None] | None = None,
     ) -> None:
         validate_evm_address(address)
         if isinstance(poll_interval_seconds, bool) or poll_interval_seconds <= 0:
@@ -74,6 +77,7 @@ class PositionMonitor:
         self.telegram_send = telegram_send
         self.now_timestamp = now_timestamp or (lambda: int(time.time()))
         self.poll_interval_seconds = poll_interval_seconds
+        self.cycle_observer = cycle_observer
 
     def _fetch_sources(
         self,
@@ -137,7 +141,7 @@ class PositionMonitor:
         committed = self.state.commit_event(event, timestamp)
         return message, PositionDeliveryEvent(event, True, committed), 1
 
-    def run_once(self, *, dry_run: bool = False) -> PositionCycleResult:
+    def _run_once_impl(self, *, dry_run: bool = False) -> PositionCycleResult:
         timestamp = self.now_timestamp()
         strategy_success, strategies, strategy_error, positions_success, positions = self._fetch_sources()
         warnings: list[str] = []
@@ -178,7 +182,30 @@ class PositionMonitor:
             warnings=tuple(warnings),
             delivery_events=tuple(delivery_events),
             telegram_sent_count=telegram_sent_count,
+            strategy_snapshots=strategies,
+            positions_snapshot=positions,
         )
+
+    def run_once(self, *, dry_run: bool = False) -> PositionCycleResult:
+        try:
+            result = self._run_once_impl(dry_run=dry_run)
+        except Exception as exc:
+            self._notify_cycle_observer(None, type(exc).__name__)
+            raise
+        self._notify_cycle_observer(result, None)
+        return result
+
+    def _notify_cycle_observer(
+        self,
+        result: PositionCycleResult | None,
+        error: str | None,
+    ) -> None:
+        if self.cycle_observer is None:
+            return
+        try:
+            self.cycle_observer(result, error)
+        except Exception:
+            pass
 
     def run_forever(self, *, dry_run: bool = False) -> None:
         while True:

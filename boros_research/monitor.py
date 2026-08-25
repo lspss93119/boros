@@ -49,6 +49,15 @@ class LiveSizeRecord:
 
 
 @dataclass(frozen=True)
+class LiveOpportunityView:
+    identity: AlertIdentity
+    percentile_90d: float | None
+    historical_band: str | None
+    high_yield_band: str | None
+    sizes: tuple[LiveSizeRecord, ...]
+
+
+@dataclass(frozen=True)
 class DeliveryEvent:
     severity: str
     asset: str
@@ -73,6 +82,7 @@ class MonitorCycleResult:
     sizes_by_opportunity: tuple[dict[int, LiveSizeRecord | None], ...]
     historical_max_timestamp: int | None
     benchmark_age_seconds: int | None
+    current_opportunities: tuple[LiveOpportunityView, ...] = ()
     telegram_sent_count: int = 0
     delivery_events: tuple[DeliveryEvent, ...] = ()
     high_yield_candidate_count: int = 0
@@ -216,6 +226,7 @@ class LiveMonitor:
         database_path: Path = DUCKDB_PATH,
         monitored_notionals: tuple[int, ...] = MONITORED_NOTIONALS,
         poll_interval_seconds: int = 60,
+        cycle_observer: Callable[[MonitorCycleResult | None, str | None], None] | None = None,
     ) -> None:
         if tuple(monitored_notionals) != MONITORED_NOTIONALS:
             raise ValueError("monitored_notionals must be the approved five-size ladder")
@@ -229,6 +240,7 @@ class LiveMonitor:
         self.database_path = Path(database_path)
         self.monitored_notionals = monitored_notionals
         self.poll_interval_seconds = poll_interval_seconds
+        self.cycle_observer = cycle_observer
 
     def _fetch_all(
         self,
@@ -473,7 +485,7 @@ class LiveMonitor:
         )
         return alert, historical_trigger, high_yield_trigger
 
-    def run_once(self, *, dry_run: bool = False) -> MonitorCycleResult:
+    def _run_once_impl(self, *, dry_run: bool = False) -> MonitorCycleResult:
         responses, failures = self._fetch_all()
         responses_by_mode: dict[str, dict[int, CrossExResponse]] = {
             HIGH_YIELD_ENTRY_MODE: {},
@@ -590,6 +602,7 @@ class LiveMonitor:
         urgent_count = 0
         high_yield_count = 0
         exceptional_count = 0
+        current_opportunities: list[LiveOpportunityView] = []
         active_state_keys: set[str] = set()
         primary_benchmarkable = 0
         ordered_identity_keys = sorted(size_records)
@@ -614,6 +627,48 @@ class LiveMonitor:
                 high_yield_count += 1
             if evaluation.high_yield.hy30_above:
                 exceptional_count += 1
+
+            historical_band = (
+                "P99"
+                if getattr(evaluation.historical, "p99_above", False)
+                else "P95"
+                if getattr(evaluation.historical, "p95_above", False)
+                else None
+            )
+            high_yield_band = (
+                "EXCEPTIONAL"
+                if evaluation.high_yield.hy30_above
+                else "HIGH_YIELD"
+                if evaluation.high_yield.hy20_above
+                else None
+            )
+            current_opportunities.append(
+                LiveOpportunityView(
+                    identity=primary.identity,
+                    percentile_90d=(
+                        None
+                        if primary.benchmark is None
+                        else primary.benchmark.percentile_90d
+                    ),
+                    historical_band=historical_band,
+                    high_yield_band=high_yield_band,
+                    sizes=tuple(
+                        item
+                        if item is not None
+                        else LiveSizeRecord(
+                            notional_usd=notional,
+                            pair=None,
+                            maker_pair=None,
+                            benchmark=None,
+                            candidate=None,
+                            identity=primary.identity,
+                            group=primary.group,
+                        )
+                        for notional in self.monitored_notionals
+                        for item in (sizes.get(notional),)
+                    ),
+                )
+            )
 
             alert_data = self._build_alert_message(primary, sizes, evaluation, warnings)
             if alert_data is None:
@@ -688,11 +743,33 @@ class LiveMonitor:
             sizes_by_opportunity=tuple(size_records[key] for key in ordered_identity_keys),
             historical_max_timestamp=historical_max,
             benchmark_age_seconds=benchmark_age,
+            current_opportunities=tuple(current_opportunities),
             telegram_sent_count=telegram_sent_count,
             delivery_events=tuple(delivery_events),
             high_yield_candidate_count=high_yield_count,
             exceptional_candidate_count=exceptional_count,
         )
+
+    def run_once(self, *, dry_run: bool = False) -> MonitorCycleResult:
+        try:
+            result = self._run_once_impl(dry_run=dry_run)
+        except Exception as exc:
+            self._notify_cycle_observer(None, type(exc).__name__)
+            raise
+        self._notify_cycle_observer(result, None)
+        return result
+
+    def _notify_cycle_observer(
+        self,
+        result: MonitorCycleResult | None,
+        error: str | None,
+    ) -> None:
+        if self.cycle_observer is None:
+            return
+        try:
+            self.cycle_observer(result, error)
+        except Exception:
+            pass
 
     def run_forever(self, *, dry_run: bool = False) -> None:
         while True:

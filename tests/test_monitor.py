@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from boros_research.alert_state import AlertStateStore
+
+import pytest
+
+from boros_research.alert_state import AlertDecision, AlertStateStore, HighYieldDecision
 from boros_research.crossex_client import (
     HIGH_YIELD_ENTRY_MODE,
     MONITORED_NOTIONALS,
@@ -147,6 +150,115 @@ def test_monitor_queries_all_sizes_aggregates_identity_and_dry_run_sends_nothing
     assert result.urgent_candidate_count == 0
     assert sent == []
     assert result.telegram_sent_count == 0
+
+
+def test_current_opportunity_views_copy_decisions_and_include_non_alerting_identities(
+    tmp_path,
+):
+    def btc_response(size):
+        raw = response(size)
+        btc_pair = replace(
+            raw.groups[0].pairs[0],
+            base="BTC",
+            short_leg=replace(raw.groups[0].pairs[0].short_leg, base="BTC", crossex_symbol="BTCUSDT"),
+            long_leg=replace(raw.groups[0].pairs[0].long_leg, base="BTC", crossex_symbol="BTCUSDT"),
+        )
+        btc_group = replace(
+            raw.groups[0],
+            token_id=4,
+            underlying="BTC",
+            pairs=(btc_pair,),
+        )
+        return replace(raw, groups=(raw.groups[0], btc_group))
+
+    class MultiClient(FakeClient):
+        def fetch(self, notional, *, boros_entry, entry_mode, exit_mode):
+            self.calls.append((notional, boros_entry, entry_mode, exit_mode))
+            return btc_response(notional)
+
+    class ViewState(FakeState):
+        def evaluate(self, identity, timestamp, percentile, *, valid=True):
+            if identity.asset == "HYPE":
+                return AlertDecision("URGENT", 0, True, True, 0)
+            return AlertDecision(None, 0, False, False, 0)
+
+        def evaluate_high_yield(
+            self,
+            identity,
+            timestamp,
+            apr,
+            seconds_to_maturity,
+            *,
+            valid=True,
+        ):
+            if identity.asset == "HYPE":
+                return HighYieldDecision("EXCEPTIONAL", True, True)
+            return HighYieldDecision(None, False, False)
+
+    monitor = LiveMonitor(
+        client=MultiClient(),
+        benchmark=FakeBenchmark(),
+        state=ViewState(),
+        telegram_send=None,
+        now_timestamp=lambda: 1_800_000_000,
+        database_path=tmp_path / "unused.duckdb",
+    )
+
+    result = monitor.run_once(dry_run=True)
+
+    assert len(result.current_opportunities) == 2
+    by_asset = {view.identity.asset: view for view in result.current_opportunities}
+    assert by_asset["HYPE"].historical_band == "P99"
+    assert by_asset["HYPE"].high_yield_band == "EXCEPTIONAL"
+    assert by_asset["BTC"].historical_band is None
+    assert by_asset["BTC"].high_yield_band is None
+    assert [item.notional_usd for item in by_asset["HYPE"].sizes] == list(MONITORED_NOTIONALS)
+    assert [item.notional_usd for item in by_asset["BTC"].sizes] == list(MONITORED_NOTIONALS)
+
+
+def test_live_cycle_observer_is_best_effort_on_success_and_failure(tmp_path):
+    observed = []
+
+    def observer(result, error):
+        observed.append((result, error))
+        raise RuntimeError("observer must not affect monitor")
+
+    monitor = LiveMonitor(
+        client=FakeClient(),
+        benchmark=FakeBenchmark(),
+        state=FakeState(),
+        telegram_send=None,
+        now_timestamp=lambda: 1_800_000_000,
+        database_path=tmp_path / "unused.duckdb",
+        cycle_observer=observer,
+    )
+
+    result = monitor.run_once(dry_run=True)
+
+    assert observed == [(result, None)]
+
+    failures = []
+
+    class BrokenState(FakeState):
+        def evaluate(self, identity, timestamp, percentile, *, valid=True):
+            raise RuntimeError("state failure")
+
+    def failure_observer(result, error):
+        failures.append((result, error))
+
+    broken = LiveMonitor(
+        client=FakeClient(),
+        benchmark=FakeBenchmark(),
+        state=BrokenState(),
+        telegram_send=None,
+        now_timestamp=lambda: 1_800_000_000,
+        database_path=tmp_path / "unused-broken.duckdb",
+        cycle_observer=failure_observer,
+    )
+
+    with pytest.raises(RuntimeError):
+        broken.run_once(dry_run=True)
+    assert failures == [(None, "RuntimeError")]
 
 
 def test_missing_size_is_reported_without_reusing_old_cross_ex_data(tmp_path):

@@ -223,3 +223,28 @@ def test_hedge_transition_is_reported_after_new_delivery():
 
     assert [event.kind for event in result.events] == [HEDGE_WARNING]
     assert "HEDGE WARNING" in sent[-1]
+
+
+def test_position_cycle_exposes_structured_sources_and_best_effort_observer():
+    state = PositionStateStore(":memory:")
+    client = FakeClient()
+    observed = []
+
+    def observer(result, error):
+        observed.append((result, error))
+        raise RuntimeError("observer must not affect lifecycle")
+
+    monitor = PositionMonitor(
+        client=client,
+        state=state,
+        address=ADDRESS,
+        telegram_send=None,
+        now_timestamp=lambda: 1_800_000_000,
+        cycle_observer=observer,
+    )
+
+    result = monitor.run_once(dry_run=True)
+
+    assert result.strategy_snapshots == tuple(client.strategies)
+    assert result.positions_snapshot == client.positions
+    assert observed == [(result, None)]
