@@ -13,6 +13,12 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .normalize import normalize_venue
+from .position_models import (
+    PositionsSnapshot,
+    StrategySnapshot,
+    normalize_positions_response,
+    normalize_strategy_response,
+)
 
 
 DEFAULT_CROSSEX_BASE_URL = "http://127.0.0.1:6688"
@@ -294,7 +300,8 @@ def normalize_opportunities_response(value: Any, *, requested_notional: int) -> 
 
 
 def _default_request_json(url: str, params: dict[str, str], headers: dict[str, str]) -> Any:
-    request_url = f"{url}?{urlencode(params)}"
+    query = urlencode(params)
+    request_url = f"{url}?{query}" if query else url
     request = Request(request_url, method="GET", headers={"Accept": "application/json", **headers})
     try:
         with urlopen(request, timeout=30) as response:
@@ -383,3 +390,44 @@ class CrossExClient:
             if actual is not None and actual != expected:
                 raise ValueError(f"CrossEx response {field} does not match requested mode")
         return response
+
+    def fetch_strategy(self, address: str) -> tuple[StrategySnapshot, ...]:
+        """Fetch the read-only strategy inventory for one EVM address."""
+        validate_evm_address(address)
+        headers = {"x-arb-token": self._token} if self._token else {}
+        try:
+            payload = self._request_json(
+                f"{self.base_url}/api/strategy/{address}",
+                {},
+                headers,
+            )
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise RuntimeError("CrossEx strategy GET failed") from exc
+        return normalize_strategy_response(payload)
+
+    def fetch_positions(self) -> PositionsSnapshot:
+        """Fetch server-computed exposure groups without any write capability."""
+        headers = {"x-arb-token": self._token} if self._token else {}
+        try:
+            payload = self._request_json(
+                f"{self.base_url}/api/positions",
+                {},
+                headers,
+            )
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise RuntimeError("CrossEx positions GET failed") from exc
+        return normalize_positions_response(payload)
+
+
+def validate_evm_address(address: str) -> str:
+    if not isinstance(address, str) or len(address) != 42 or not address.startswith("0x"):
+        raise ValueError("address must be an EVM address (0x plus 40 hex characters)")
+    try:
+        int(address[2:], 16)
+    except ValueError as exc:
+        raise ValueError("address must be an EVM address (0x plus 40 hex characters)") from exc
+    return address

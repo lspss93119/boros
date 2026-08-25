@@ -13,6 +13,52 @@ from boros_research.crossex_client import (
 )
 
 
+POSITION_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
+
+
+def _strategy_payload() -> dict:
+    return {
+        "ok": True,
+        "data": {
+            "strategies": [
+                {
+                    "strategyId": "strategy-1",
+                    "base": "ETH",
+                    "maturity": 1_790_000_000,
+                    "legs": [],
+                    "hedge": None,
+                    "hedgeChecks": {
+                        "borosMatchRatio": 1.0,
+                        "perpMatchRatio": 1.0,
+                        "borosVsPerpRatio": 1.0,
+                        "fullyHedged": True,
+                    },
+                    "capitalUsd": 1_000.0,
+                    "capitalSplit": {},
+                    "realizedPnlUsd": 0.0,
+                    "realizedApr": 0.0,
+                    "spread": 0.1,
+                    "lockedAprOnCapital": 0.1,
+                    "expectedPnlToMaturityUsd": 10.0,
+                    "secondsToMaturity": 100,
+                    "notionalMismatchUsd": 0.0,
+                    "attribution": {},
+                    "warnings": [],
+                }
+            ]
+        },
+        "meta": {"asOfSec": 1_788_100_000},
+    }
+
+
+def _positions_payload() -> dict:
+    return {
+        "ok": True,
+        "data": {"exposureGroups": [{"groupId": "exposure-1"}]},
+        "meta": {"asOfSec": 1_788_100_001},
+    }
+
+
 FIXTURE = Path(__file__).parent / "fixtures" / "crossex_opportunities_sanitized.json"
 
 
@@ -173,3 +219,51 @@ def test_default_transport_constructs_get_request(monkeypatch):
 
     assert seen[0][0] == "GET"
     assert "notionalUsd=10000" in seen[0][1]
+
+
+def test_client_fetches_strategy_and_positions_with_get_only_routes():
+    calls: list[tuple[str, dict[str, str], dict[str, str]]] = []
+
+    def requester(url: str, params: dict[str, str], headers: dict[str, str]):
+        calls.append((url, params, headers))
+        return _strategy_payload() if "/api/strategy/" in url else _positions_payload()
+
+    client = CrossExClient(
+        base_url="http://127.0.0.1:6688",
+        token="test-token",
+        request_json=requester,
+    )
+
+    strategies = client.fetch_strategy(POSITION_ADDRESS)
+    positions = client.fetch_positions()
+
+    assert strategies[0].strategy_id == "strategy-1"
+    assert positions.exposure_groups[0]["groupId"] == "exposure-1"
+    assert calls == [
+        (
+            f"http://127.0.0.1:6688/api/strategy/{POSITION_ADDRESS}",
+            {},
+            {"x-arb-token": "test-token"},
+        ),
+        (
+            "http://127.0.0.1:6688/api/positions",
+            {},
+            {"x-arb-token": "test-token"},
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "https://evil.example/",
+        "0x1234",
+        "0X1234567890abcdef1234567890abcdef12345678",
+        "0x1234567890abcdef1234567890abcdef1234567!",
+    ],
+)
+def test_strategy_address_must_be_a_safe_evm_path_segment(address: str):
+    client = CrossExClient(request_json=lambda *_args: _strategy_payload())
+
+    with pytest.raises(ValueError, match="EVM address"):
+        client.fetch_strategy(address)
