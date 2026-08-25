@@ -274,3 +274,14 @@ def test_production_monitor_wires_snapshot_observer_with_command_interval(
     published = read_snapshot(snapshot, "p1")
     assert published is not None
     assert published["pollIntervalSeconds"] == 37
+
+
+def test_dashboard_parser_has_fixed_localhost_defaults_and_no_host_override():
+    args = cli.build_parser().parse_args(["dashboard"])
+
+    assert args.port == 8765
+    assert args.site_dir == Path("site")
+    assert args.snapshot_dir == Path("data/dashboard")
+
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["dashboard", "--host", "0.0.0.0"])

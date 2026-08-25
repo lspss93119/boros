@@ -40,6 +40,7 @@ from .dashboard_snapshot import (
     read_snapshot,
     write_snapshot,
 )
+from .dashboard_server import DEFAULT_DASHBOARD_PORT, DashboardHTTPServer
 from .live_benchmark import HistoricalBenchmarkLookup
 from .manifest import select_archive_files
 from .monitor import LiveMonitor, render_cycle_summary, render_delivery_event
@@ -327,6 +328,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="poll interval seconds for daemon mode (default: 60)",
     )
 
+    dashboard = subparsers.add_parser(
+        "dashboard", help="serve the read-only localhost unified dashboard"
+    )
+    dashboard.add_argument(
+        "--port",
+        type=_positive_int,
+        default=DEFAULT_DASHBOARD_PORT,
+        help="localhost dashboard port (default: 8765)",
+    )
+    dashboard.add_argument(
+        "--site-dir",
+        type=Path,
+        default=Path("site"),
+        help="static research site root (default: site)",
+    )
+    dashboard.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        default=Path("data/dashboard"),
+        help="dashboard snapshot directory (default: data/dashboard)",
+    )
+
     subparsers.add_parser(
         "telegram-test", help="send one harmless Telegram connectivity test message"
     )
@@ -537,6 +560,21 @@ def _run_positions_command(args: argparse.Namespace) -> int:
         state.close()
 
 
+def _run_dashboard_command(args: argparse.Namespace) -> int:
+    server = DashboardHTTPServer(
+        site_dir=args.site_dir,
+        snapshot_dir=args.snapshot_dir,
+        port=args.port,
+    )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        server.server_close()
+    return 0
+
+
 def _run_telegram_test_command() -> int:
     sender = _telegram_sender()
     if sender is None:
@@ -573,6 +611,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_monitor_command(args)
         if args.command == "positions":
             return _run_positions_command(args)
+        if args.command == "dashboard":
+            return _run_dashboard_command(args)
         if args.command == "telegram-test":
             return _run_telegram_test_command()
         parser.error(f"unknown command: {args.command}")
