@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import boros_research.cli as cli
+from boros_research.position_models import PositionsSnapshot
 
 
 ADDRESS_FROM_ENV = "0x1234567890abcdef1234567890abcdef12345678"
@@ -79,3 +80,39 @@ def test_resolve_position_address_rejects_empty_values(monkeypatch):
 
     with pytest.raises(ValueError, match="BOROS_ADDRESS"):
         cli.resolve_position_address(None)
+
+
+def test_positions_dry_run_uses_ephemeral_state_and_preserves_both_sqlite_files(tmp_path, monkeypatch):
+    p2_path = tmp_path / "position_monitor.sqlite3"
+    p1_path = tmp_path / "live_monitor.sqlite3"
+    p1_path.write_bytes(b"P1 sentinel")
+    p2_path.write_bytes(b"P2 sentinel")
+    before_p1 = p1_path.read_bytes()
+    before_p2 = p2_path.read_bytes()
+
+    class FakeClient:
+        def fetch_strategy(self, _address):
+            return ()
+
+        def fetch_positions(self):
+            return PositionsSnapshot((), 1_788_100_000, ())
+
+    monkeypatch.setattr(cli, "CrossExClient", lambda **_kwargs: FakeClient())
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+
+    args = cli.build_parser().parse_args(
+        [
+            "positions",
+            "--address",
+            ADDRESS_FROM_ENV,
+            "--dry-run",
+            "--once",
+            "--state-path",
+            str(p2_path),
+        ]
+    )
+
+    assert cli._run_positions_command(args) == 0
+    assert p1_path.read_bytes() == before_p1
+    assert p2_path.read_bytes() == before_p2

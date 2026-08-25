@@ -137,6 +137,38 @@ def test_successful_empty_inventory_advances_absence_to_disappearance():
     assert "STRATEGY DISAPPEARED" in sent[-1]
 
 
+def test_failed_disappearance_delivery_remains_retryable():
+    state = PositionStateStore(":memory:")
+    client = FakeClient()
+    attempts = 0
+
+    def sender(_message):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            raise RuntimeError("telegram down")
+
+    monitor = PositionMonitor(
+        client=client,
+        state=state,
+        address=ADDRESS,
+        telegram_send=sender,
+        now_timestamp=lambda: 1_800_000_000,
+    )
+    monitor.run_once()
+    client.strategies = []
+    monitor.run_once()
+    monitor.run_once()
+    failed = monitor.run_once()
+    retried = monitor.run_once()
+
+    assert [event.kind for event in failed.events] == [STRATEGY_DISAPPEARED]
+    assert failed.telegram_sent_count == 0
+    assert [event.kind for event in retried.events] == [STRATEGY_DISAPPEARED]
+    assert retried.telegram_sent_count == 1
+    assert state.snapshot("strategy-1").active is False
+
+
 def test_failed_event_delivery_does_not_crash_or_consume_event():
     state = PositionStateStore(":memory:")
     client = FakeClient([strategy()])
