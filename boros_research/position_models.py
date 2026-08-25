@@ -79,6 +79,8 @@ def _string_tuple(value: Any, context: str) -> tuple[str, ...]:
 
 
 def _freeze(value: Any, context: str) -> JsonValue:
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"{context} must contain finite numbers")
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, Mapping):

@@ -164,6 +164,18 @@ def test_positions_normalizer_preserves_server_exposure_groups():
     assert result.exposure_groups[0]["netNotionalUsd"] == 10_000
 
 
+def test_nested_non_finite_numbers_fail_closed():
+    strategy = strategy_payload()
+    strategy["data"]["strategies"][0]["capitalSplit"]["boros"] = math.inf
+    with pytest.raises(ValueError, match="finite"):
+        normalize_strategy_response(strategy)
+
+    positions = positions_payload()
+    positions["data"]["exposureGroups"][0]["netNotionalUsd"] = math.nan
+    with pytest.raises(ValueError, match="finite"):
+        normalize_positions_response(positions)
+
+
 def test_malformed_strategy_envelope_fails_closed():
     payload = strategy_payload()
     del payload["data"]["strategies"]
