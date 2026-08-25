@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -80,6 +80,21 @@ def _valid_origin(value: str | None) -> bool:
         and parsed.fragment == ""
         and (port is None or 1 <= port <= 65535)
     )
+
+
+def _compatible_snapshot_data(kind: str, snapshot: Mapping[str, Any]) -> bool:
+    data = snapshot.get("data")
+    if not isinstance(data, Mapping):
+        return False
+    if kind == "p1":
+        return isinstance(data.get("counts"), Mapping) and isinstance(
+            data.get("currentOpportunities"), list
+        )
+    if kind == "p2":
+        return isinstance(data.get("strategies"), list) and (
+            data.get("positions") is None or isinstance(data.get("positions"), Mapping)
+        )
+    return False
 
 
 class _DashboardRequestHandler(BaseHTTPRequestHandler):
@@ -159,6 +174,8 @@ class _DashboardRequestHandler(BaseHTTPRequestHandler):
             return {"status": "invalid", "freshness": "offline"}
         if snapshot is None:
             return {"status": "offline", "freshness": "offline"}
+        if not _compatible_snapshot_data(kind, snapshot):
+            return {"status": "invalid", "freshness": "offline"}
         age = self._now() - snapshot["cycleTimestamp"]
         state = freshness(age, snapshot["pollIntervalSeconds"])
         return {
@@ -202,6 +219,9 @@ class _DashboardRequestHandler(BaseHTTPRequestHandler):
             return
         if snapshot is None:
             self._send_error_envelope(HTTPStatus.SERVICE_UNAVAILABLE, "snapshot_unavailable")
+            return
+        if not _compatible_snapshot_data(kind, snapshot):
+            self._send_error_envelope(HTTPStatus.SERVICE_UNAVAILABLE, "snapshot_invalid")
             return
         age = self._now() - snapshot["cycleTimestamp"]
         data = dict(snapshot["data"])

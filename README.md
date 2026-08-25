@@ -175,8 +175,8 @@ calendar days suppresses alerts until Phase 1/2 data is refreshed.
 
 CrossEx `capitalUsd` is displayed as **modelled minimum capital**, and
 `estProfitUsd` as modelled **estimated net profit**. These are not guaranteed
-returns or a recommended position size. Live monitoring does not implement
-percentile scoring, grades, dashboards, or automated execution.
+returns or a recommended position size. The research companion does not
+implement automated execution.
 
 ### P5 unified dashboard
 

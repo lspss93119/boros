@@ -261,7 +261,7 @@ def build_p1_snapshot(
 ) -> dict[str, Any]:
     """Build a P1 snapshot without recalculating any alert thresholds."""
     if error is not None or result is None:
-        diagnostics = {"error": error or "unknown"}
+        error_diagnostics = {"error": error or "unknown"}
         return _base_snapshot(
             kind="p1",
             cycle_timestamp=cycle_timestamp,
@@ -269,7 +269,7 @@ def build_p1_snapshot(
             source_status="error",
             last_good_timestamp=_previous_last_good(previous),
             data=_previous_data(previous, "p1"),
-            diagnostics=diagnostics,
+            diagnostics=error_diagnostics,
         )
 
     cross_ex_status = "ok" if not result.unavailable_notionals else "degraded"
@@ -282,7 +282,7 @@ def build_p1_snapshot(
     source_status = (
         "ok" if cross_ex_status == "ok" and benchmark_status == "ok" else "degraded"
     )
-    diagnostics = {
+    diagnostics: dict[str, Any] = {
         "crossExStatus": cross_ex_status,
         "benchmarkStatus": benchmark_status,
         "historicalMaxTimestamp": result.historical_max_timestamp,

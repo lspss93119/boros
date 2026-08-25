@@ -32,6 +32,14 @@ function statusText(sourceStatus: string | undefined, freshness: string | undefi
   return [sourceStatus ?? "offline", freshness ?? "offline"].join(" / ");
 }
 
+function diagnosticSeconds(
+  data: { diagnostics?: Record<string, unknown> } | undefined,
+  key: string,
+): string {
+  const value = data?.diagnostics?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? `${value}s` : "—";
+}
+
 function StatusIndicator({
   sourceStatus,
   freshness,
@@ -221,12 +229,12 @@ export function App({ hostname = window.location.hostname }: AppProps) {
       </section>
 
       <section className="panel" aria-labelledby="live-opportunities-heading">
-        <div className="section-heading"><div><p className="eyebrow">P1</p><h2 id="live-opportunities-heading">Live Opportunities</h2></div><StatusIndicator sourceStatus={opportunities.data?.sourceStatus} freshness={opportunities.data?.freshness} /></div>
+        <div className="section-heading"><div><p className="eyebrow">P1</p><h2 id="live-opportunities-heading">Live Opportunities</h2></div><StatusIndicator sourceStatus={opportunities.isError ? "error" : opportunities.data?.sourceStatus} freshness={opportunities.isError ? "stale" : opportunities.data?.freshness} /></div>
         <Opportunities local={local} data={opportunities.data} isError={opportunities.isError} />
       </section>
 
       <section className="panel" aria-labelledby="open-positions-heading">
-        <div className="section-heading"><div><p className="eyebrow">P2</p><h2 id="open-positions-heading">Open Positions</h2></div><StatusIndicator sourceStatus={positions.data?.sourceStatus} freshness={positions.data?.freshness} /></div>
+        <div className="section-heading"><div><p className="eyebrow">P2</p><h2 id="open-positions-heading">Open Positions</h2></div><StatusIndicator sourceStatus={positions.isError ? "error" : positions.data?.sourceStatus} freshness={positions.isError ? "stale" : positions.data?.freshness} /></div>
         <Positions local={local} data={positions.data} isError={positions.isError} />
       </section>
 
@@ -238,7 +246,7 @@ export function App({ hostname = window.location.hostname }: AppProps) {
 
         <section className="panel" aria-labelledby="health-heading">
           <div className="section-heading"><div><p className="eyebrow">OPERATIONS</p><h2 id="health-heading">System Health</h2></div><span className="status-text">{local ? (health.data?.status ?? "offline") : "offline"}</span></div>
-          {!local ? <LiveState text="Local monitor not connected" /> : <div className="health-list"><span>Process freshness <b>{health.data?.server ?? "—"}</b></span><span>P1 cycle <b>{health.data?.components.p1.cycleTimestamp ?? "—"}</b></span><span>P1 last good <b>{health.data?.components.p1.lastGoodTimestamp ?? "—"}</b></span><span>P2 cycle <b>{health.data?.components.p2.cycleTimestamp ?? "—"}</b></span><span>P2 last good <b>{health.data?.components.p2.lastGoodTimestamp ?? "—"}</b></span><span>P2 primary / auxiliary <b>{health.data ? `${health.data.components.p2.status} / ${health.data.components.p2.freshness}` : "—"}</b></span></div>}
+          {!local ? <LiveState text="Local monitor not connected" /> : <div className="health-list"><span>Process status <b>{health.data?.server ?? "offline"}</b></span><span>Process freshness <b>{health.data?.components.p1.freshness ?? "offline"}</b></span><span>P1 source state <b>{opportunities.data?.sourceStatus ?? "—"}</b></span><span>Benchmark age <b>{diagnosticSeconds(opportunities.data, "benchmarkAgeSeconds")}</b></span><span>P1 cycle <b>{health.data?.components.p1.cycleTimestamp ?? "—"}</b></span><span>P1 last good <b>{health.data?.components.p1.lastGoodTimestamp ?? "—"}</b></span><span>P2 source state <b>{positions.data?.sourceStatus ?? "—"}</b></span><span>P2 cycle <b>{health.data?.components.p2.cycleTimestamp ?? "—"}</b></span><span>P2 last good <b>{health.data?.components.p2.lastGoodTimestamp ?? "—"}</b></span><span>P2 primary / auxiliary <b>{positions.data?.diagnostics?.primaryStatus && positions.data?.diagnostics?.auxiliaryStatus ? `${positions.data.diagnostics.primaryStatus} / ${positions.data.diagnostics.auxiliaryStatus}` : health.data ? `${health.data.components.p2.status} / ${health.data.components.p2.freshness}` : "—"}</b></span></div>}
         </section>
       </div>
 

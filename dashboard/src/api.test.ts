@@ -39,4 +39,17 @@ describe("dashboard API", () => {
       DashboardApiError,
     );
   });
+
+  it("fails closed on an incomplete error envelope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ ok: false }), { status: 503 }),
+      ),
+    );
+
+    await expect(dashboardFetch("/api/dashboard/positions")).rejects.toBeInstanceOf(
+      DashboardApiError,
+    );
+  });
 });

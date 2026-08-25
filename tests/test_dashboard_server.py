@@ -18,7 +18,7 @@ def snapshot(kind: str) -> dict:
         "sourceStatus": "ok",
         "lastGoodTimestamp": 1_000,
         "data": (
-            {"currentOpportunities": []}
+            {"counts": {}, "currentOpportunities": []}
             if kind == "p1"
             else {"strategies": [], "positions": None}
         ),
@@ -128,6 +128,21 @@ def test_missing_or_malformed_live_snapshots_fail_closed_but_health_reports_inva
     health = json.loads(body)
     assert status == 200
     assert health["data"]["components"]["p1"]["status"] == "invalid"
+
+
+def test_incompatible_snapshot_data_fails_closed(running_server):
+    server, _site, snapshots = running_server
+    invalid = snapshot("p1")
+    invalid["data"] = {"notCurrentOpportunities": []}
+    write_snapshot(snapshots / "p1_latest.json", invalid)
+
+    status, _headers, body = request(server, "/api/dashboard/opportunities")
+    assert status == 503
+    assert json.loads(body)["ok"] is False
+
+    status, _headers, body = request(server, "/api/dashboard/health")
+    assert status == 200
+    assert json.loads(body)["data"]["components"]["p1"]["status"] == "invalid"
 
 
 def test_host_origin_and_path_traversal_are_rejected(running_server):

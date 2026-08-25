@@ -115,15 +115,17 @@ describe("dashboard UI acceptance", () => {
     expect(screen.getByText(/ETH-USD-SWAP/)).toBeInTheDocument();
     expect(screen.getByText(/Hedge ratios/)).toBeInTheDocument();
     expect(screen.getByText(/Attribution/)).toBeInTheDocument();
+    expect(screen.getByText(/Benchmark age/)).toBeInTheDocument();
+    expect(screen.getByText(/P2 cycle/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /trade|close|roll|execute/i })).toBeNull();
   });
 
   it("retains prior rows and marks background refresh failure", () => {
-    setup({ opportunityError: true, opportunityFreshness: "stale" });
+    setup({ opportunityError: true, opportunityFreshness: "fresh" });
     render(<App hostname="localhost" />);
     expect(screen.getAllByText("ETH").length).toBeGreaterThan(0);
     expect(screen.getByText("Background refresh failed; showing last valid rows.")).toBeInTheDocument();
-    expect(screen.getByText("degraded / stale")).toHaveClass("status-degraded", "freshness-stale");
+    expect(screen.getByText("error / stale")).toHaveClass("status-error", "freshness-stale");
   });
 
   it("keeps static Radar usable without live monitor data", () => {
